@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!-- Created with Inkscape (http://www.inkscape.org/) -->
+
+<svg
+   width="500"
+   height="500"
+   viewBox="0 0 132.29166 132.29167"
+   version="1.1"
+   id="svg1"
+   sodipodi:docname="track_1.svg"
+   inkscape:version="1.3.2 (091e20e, 2023-11-25, custom)"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:svg="http://www.w3.org/2000/svg">
+  <sodipodi:namedview
+     id="namedview1"
+     pagecolor="#505050"
+     bordercolor="#eeeeee"
+     borderopacity="1"
+     inkscape:showpageshadow="0"
+     inkscape:pageopacity="0"
+     inkscape:pagecheckerboard="0"
+     inkscape:deskcolor="#505050"
+     inkscape:document-units="mm"
+     inkscape:zoom="0.78305976"
+     inkscape:cx="369.70358"
+     inkscape:cy="365.87246"
+     inkscape:window-width="1920"
+     inkscape:window-height="1057"
+     inkscape:window-x="1912"
+     inkscape:window-y="-8"
+     inkscape:window-maximized="1"
+     inkscape:current-layer="layer1" />
+  <defs
+     id="defs1">
+    <rect
+       x="59.382441"
+       y="147.49832"
+       width="397.7985"
+       height="260.51651"
+       id="rect1" />
+    <rect
+       x="59.382442"
+       y="147.49832"
+       width="397.79849"
+       height="260.51651"
+       id="rect1-3" />
+    <rect
+       x="59.382442"
+       y="147.49832"
+       width="397.79849"
+       height="260.51651"
+       id="rect1-3-6" />
+    <rect
+       x="59.382442"
+       y="147.49832"
+       width="397.79849"
+       height="260.51651"
+       id="rect1-3-3-1-1" />
+    <rect
+       x="59.382442"
+       y="147.49832"
+       width="397.79849"
+       height="260.51651"
+       id="rect1-3-3-1-1-5" />
+  </defs>
+  <g
+     inkscape:label="Layer 1"
+     inkscape:groupmode="layer"
+     id="layer1">
+    <g
+       id="text1-4-7"
+       transform="matrix(1.4785537,0,0,1.4785537,-79.445403,-199.25164)">
+      <path
+         id="path1"
+         style="color:#000000;-inkscape-font-specification:'Formula1, Normal';fill:#000000;-inkscape-stroke:none"
+         d="M 58.830088 158.14457 L 58.830088 166.18357 L 74.830152 166.18357 L 74.830152 200.85149 L 83.668126 200.85149 L 83.668126 166.18357 L 99.667841 166.18357 L 99.667841 158.14457 L 58.830088 158.14457 z M 107.72257 158.14457 L 107.72257 166.18357 L 118.35561 166.18357 C 118.46317 166.18357 118.47983 166.18382 118.49122 166.18217 L 118.51184 166.20909 L 118.5723 166.26745 C 118.5379 166.23305 118.60166 166.24838 118.60166 166.5918 L 118.60166 192.81248 L 106.49615 192.81248 L 106.49615 200.85149 L 107.84769 200.85149 L 138.10763 200.85149 L 138.10763 192.81248 L 127.44139 192.81248 L 127.44139 166.53727 C 127.44139 163.98567 126.85693 161.85296 125.48834 160.34751 C 124.08452 158.8033 121.91896 158.14457 119.31466 158.14457 L 107.72257 158.14457 z " />
+    </g>
+  </g>
+</svg>
