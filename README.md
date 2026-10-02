@@ -81,16 +81,25 @@ The bridge:
 - applies unambiguous MixBoard, VideoInput, and audio events immediately;
 - reconciles ambiguous audio events and successful mutations with SoundFlex snapshots;
 - rebuilds the complete state every five seconds and after reconnecting;
-- polls input and selected-channel output RMS at a bounded 100 ms cadence, skipping obsolete cycles when replies are slow;
+- uses one shared, demand-driven meter stream for every browser client, polling only while at least one visible page is subscribed;
+- polls input and selected-channel output RMS at most every 150 ms, starts the next cycle only after both replies complete, and suppresses unchanged browser updates;
 - coalesces queued fader updates so only the latest unsent value for each control is transmitted;
 - validates and exposes only the SoundFlex actions required by this project;
 - reconnects with bounded backoff and rebuilds the snapshot.
 
 No authentication or TLS is provided. Keep the web server loopback-only unless it is placed behind an approved secure deployment layer.
 
+## Meter traffic
+
+Previously the bridge continuously started a meter cycle every 100 ms whenever MixBoard was connected: up to 10 cycles/second, 20 MBControl queries/second, and two Base64 JSON replies per cycle even with no browser viewing the mixer. Slow replies did not overlap, but polling resumed at the next timer tick.
+
+The bridge now runs a single stream shared by all browser clients. A visible page subscribes through the WebSocket; hidden pages suspend their subscription, and polling stops when the last active page suspends or disconnects. Each cycle contains exactly one `MBC_GETVIDEOINPUTRMS` query and one selected-channel `MBC_GETAUDIOTRACKRMS` query. The next cycle is scheduled 150 ms after both replies complete, so the maximum is about 6.7 cycles/second or 13.3 queries/second under ideal latency, independent of browser count. Idle and fully hidden usage generates no RMS queries. Identical samples remain cached but are not repeatedly sent to browsers.
+
+The exact response byte count depends on the configured VideoInput count and JSON number formatting. No live MixBoard was available to record a representative production payload; automated mock tests verify subscription lifecycle, sharing, backpressure, reconnect behavior, unchanged-sample suppression, and query-rate bounds.
+
 ## Browser compatibility
 
-The production application was launched and DOM-rendered successfully with the installed current Microsoft Edge during final validation. It uses standard React, WebSocket, CSS Grid, SVG mask, range-input, and `localStorage` APIs supported by current Edge, Firefox, and Chrome. Chrome and Firefox were not installed on the validation workstation, so runtime checks in those two browsers remain an environment-dependent deployment check.
+The production application was launched and DOM-rendered successfully with the installed current Microsoft Edge during final validation. The Task 6 production build also rendered successfully in headless Firefox at 1280×800 using `C:\Program Files (x86)\Mozilla Firefox\firefox.exe`. The application uses standard React, WebSocket, CSS Grid, SVG mask, range-input, Page Visibility, and `localStorage` APIs supported by current Edge, Firefox, and Chrome. Chrome was not installed on the validation workstation, so its runtime check remains an environment-dependent deployment check.
 
 ## Troubleshooting
 
@@ -101,7 +110,7 @@ The production application was launched and DOM-rendered successfully with the i
 - **The local page does not load:** verify that the launcher reports `SoundFlex Control is available`, and check `http://127.0.0.1:3080/api/health` for `{"ok":true}`.
 - **MixBoard remains disconnected:** verify the remote host and both ports, MBControl protocol 1.1 availability, MixBoard service state, and intervening Windows/network firewall rules.
 - **Settings need to be reset:** clear the site's stored data for the local SoundFlex URL, or remove the `soundflex-control.connection` local-storage entry in browser developer tools.
-- **Meters lag:** check network latency to MixBoard. Meter polling is deliberately bounded and skips obsolete cycles rather than building an unbounded queue.
+- **Meters lag:** keep the mixer tab visible and check network latency to MixBoard. Meter polling pauses in hidden pages and is deliberately bounded so slow replies cannot build an unbounded queue.
 
 ## Interface notes
 

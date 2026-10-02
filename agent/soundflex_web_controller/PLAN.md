@@ -256,6 +256,41 @@ Work:
 
 **Exit criterion:** The launcher starts the built application with the installed Node.js runtime, the three target browsers work, documented tests/build pass, and the controller completes the required live workflow.
 
+### Task 6 — Minimize RMS VU-meter protocol traffic
+
+**Objective:** Preserve responsive RMS VU meters while reducing command frequency and data exchanged with MixBoard.
+
+Work:
+
+- measure and document the current RMS query rate, response volume, and behavior under slow replies;
+- use one shared backend meter stream for all browser clients and fan out cached samples instead of polling once per client;
+- poll only while at least one connected client actively needs meter data, pausing when there are no viewers and supporting suspension for hidden/inactive pages;
+- avoid duplicate, overlapping, or obsolete RMS requests and retain strict backpressure when MixBoard replies slowly;
+- evaluate a lower or adaptive polling frequency that remains visually responsive, with separate rates where useful for visible and inactive states;
+- avoid sending unchanged or superseded meter samples to browsers where doing so provides no visible benefit;
+- add focused tests for subscription lifecycle, multiple clients, backpressure, reconnects, and query-rate limits;
+- document the chosen meter cadence and validate it against a live MixBoard when one is available.
+
+**Exit criterion:** Meter polling is demand-driven and shared, never accumulates an unbounded query queue, substantially reduces idle and redundant MixBoard traffic, and keeps visible meters acceptably responsive with automated query-rate/backpressure coverage.
+
+### Task 7 — Fit and proportion the GUI to the browser viewport
+
+**Objective:** Make the complete SoundFlex web GUI fit within the available browser area while closely preserving the proportions, relative control sizes, spacing, and overall composition shown in `soundflex.png`.
+
+Work:
+
+- measure the reference image's major regions, strip dimensions, gaps, controls, typography, and width/height ratios rather than approximating each area independently;
+- define a reference layout coordinate system and scale the mixer coherently to the browser's available width and height at 100% browser zoom;
+- account for the application header and connection/error overlays without allowing them to permanently displace or clip the mixer;
+- keep all mixer sections and controls visible without browser-page horizontal or vertical scrolling at the supported desktop and laptop viewport sizes;
+- preserve the reference two-row strip composition and relative sizing wherever the viewport permits, using proportional fallback rules for narrower or differently shaped browser areas;
+- ensure dynamically discovered VideoInputs fit predictably up to the supported input count without distorting individual control groups;
+- retain usable pointer targets, readable labels, keyboard focus indicators, and correct meter/fader interaction after scaling;
+- add viewport layout tests that assert the mixer stays inside the visible browser bounds and that key reference proportions remain within agreed tolerances;
+- compare screenshots with `soundflex.png` at 3840×2160 and representative 1920×1080, 1366×768, 1280×720, and reduced browser areas in Edge and Firefox where available.
+
+**Exit criterion:** At 100% browser zoom, the complete mixer fits inside each agreed test viewport without page-level scrolling or clipped controls, and measured section/control proportions closely match `soundflex.png` while all controls remain usable.
+
 ## Validation strategy
 
 ### Java/protocol
@@ -279,6 +314,7 @@ Work:
 - Component/action tests for each control group.
 - State updates from snapshots/events and rollback/error presentation.
 - Responsive checks at reference desktop dimensions and representative laptop/tablet widths.
+- Automated viewport-bound and reference-proportion assertions at the Task 7 target resolutions.
 - Manual visual comparison with `soundflex.png`.
 
 ### End to end
@@ -308,7 +344,7 @@ Work:
 - VideoInputs and supported count are discovered dynamically.
 - Input RMS values correspond to their actual VideoInputs after the server fix.
 - UI state recovers from external changes and connection loss.
-- Desktop appearance closely follows `soundflex.png`, with usable responsive behavior.
+- Desktop appearance closely follows `soundflex.png`; the complete GUI fits the available browser area without page-level scrolling or clipping and preserves the reference proportions across the agreed viewport sizes.
 - Edge, Firefox, and Chrome are supported.
 - A Windows launcher and operating documentation are provided.
 - Java formatting/compilation and web tests/build pass.

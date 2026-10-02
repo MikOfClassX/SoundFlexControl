@@ -13,6 +13,7 @@ export class SoundFlexApi {
   private socket: WebSocket | null = null;
   private listeners = new Set<MessageListener>();
   private pending = new Map<string, { resolve: (value: unknown) => void; reject: (error: Error) => void }>();
+  private metersActive = false;
 
   open(): Promise<void> {
     if (this.socket?.readyState === WebSocket.OPEN) return Promise.resolve();
@@ -22,7 +23,10 @@ export class SoundFlexApi {
       const socket = new WebSocket(`${protocol}//${window.location.host}/ws`);
       this.socket = socket;
 
-      socket.addEventListener("open", () => resolve(), { once: true });
+      socket.addEventListener("open", () => {
+        this.sendMeterSubscription();
+        resolve();
+      }, { once: true });
       socket.addEventListener("error", () => reject(new Error("Could not connect to the local SoundFlex bridge")), { once: true });
       socket.addEventListener("message", (event) => this.handleMessage(event.data));
       socket.addEventListener("close", () => {
@@ -56,6 +60,17 @@ export class SoundFlexApi {
 
   sendAction(action: SoundFlexAction): Promise<unknown> {
     return this.request("action", action);
+  }
+
+  setMetersActive(active: boolean): void {
+    this.metersActive = active;
+    this.sendMeterSubscription();
+  }
+
+  private sendMeterSubscription(): void {
+    if (this.socket?.readyState === WebSocket.OPEN) {
+      this.socket.send(JSON.stringify({ type: "meters.subscription", payload: { active: this.metersActive } }));
+    }
   }
 
   private request(type: string, payload: unknown): Promise<unknown> {

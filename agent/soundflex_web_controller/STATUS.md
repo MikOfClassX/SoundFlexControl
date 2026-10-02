@@ -2,21 +2,21 @@
 
 ## Overall status
 
-`APPROVED`
+`PLANNED`
 
-All planned implementation tasks are complete and approved.
+Tasks 0–6 are complete and approved. Task 7 has been added and is awaiting implementation. Live MixBoard validation remains unavailable.
 
 ## Current task
 
-### Task 5 — Launcher, browser validation, and handoff
+### Task 7 — Fit and proportion the GUI to the browser viewport
 
-- **State:** `APPROVED`
-- **Objective:** Make the controller straightforward to start and validate as a complete application.
-- **Exit criterion:** Met within the available environment. Setup and launch workflows, documentation, Edge validation, tests, and production build passed. Chrome, Firefox, and live MixBoard validation remain unavailable on this workstation.
+- **State:** `PLANNED`
+- **Objective:** Make the complete SoundFlex web GUI fit within the available browser area while closely preserving the proportions, relative control sizes, spacing, and overall composition shown in `soundflex.png`.
+- **Exit criterion:** At 100% browser zoom, the complete mixer fits inside each agreed test viewport without page-level scrolling or clipped controls, and measured section/control proportions closely match `soundflex.png` while all controls remain usable.
 
 ## Next task
 
-None. Task 5 is the final planned implementation task.
+Task 7 — Fit and proportion the GUI to the browser viewport.
 
 ## Task checklist
 
@@ -28,6 +28,8 @@ None. Task 5 is the final planned implementation task.
 | 3 | State coordination and live metering | `APPROVED` |
 | 4 | Native-like React GUI | `APPROVED` |
 | 5 | Launcher, browser validation, and handoff | `APPROVED` |
+| 6 | Minimize RMS VU-meter protocol traffic | `APPROVED` |
+| 7 | Fit and proportion the GUI to the browser viewport | `PLANNED` |
 
 ## Approved tasks
 
@@ -37,11 +39,16 @@ None. Task 5 is the final planned implementation task.
 - Task 3 — State coordination and live metering
 - Task 4 — Native-like React GUI
 - Task 5 — Launcher, browser validation, and handoff
+- Task 6 — Minimize RMS VU-meter protocol traffic
+
+## Planned tasks
+
+- Task 7 — Fit and proportion the GUI to the browser viewport
 
 ## Blockers
 
 - Live validation against MixBoard requires a reachable instance; none is currently available.
-- Chrome and Firefox are not installed on this workstation. Current Edge validation passed; Chrome/Firefox runtime checks could not be performed.
+- Chrome is not installed on this workstation. Current Edge and Firefox validation passed; Chrome runtime checks could not be performed.
 
 ## Deferred work
 
@@ -59,6 +66,8 @@ None. Task 5 is the final planned implementation task.
 - Task 4 was authorized after explicit approval of Task 3.
 - Task 4 was approved and Task 5 was authorized to start.
 - Task 5 and the completed implementation were approved.
+- Task 6 and the RMS traffic optimization implementation were approved.
+- Task 7 was requested to make the GUI fit the browser area and reflect the proportions and sizes of `soundflex.png`.
 
 - Use a Node.js backend and React frontend.
 - Allow operation from a controller machine separate from MixBoard.
@@ -142,20 +151,23 @@ None. Task 5 is the final planned implementation task.
 - Re-ran all 12 backend tests and 5 frontend tests successfully.
 - Rebuilt the Vite production application successfully.
 - Ran the built application in the installed current Microsoft Edge and confirmed the React UI rendered in the DOM without a browser process failure.
-- Confirmed Chrome and Firefox are not installed in standard paths or registered application paths, so those runtime checks were not possible.
+- During Task 5, Chrome and Firefox were not found in the checked standard or registered paths, so those runtime checks were not performed at that time.
 - A live MixBoard instance was not available; mock integration coverage remains the executable protocol validation.
 - Removed generated logs, validation helpers, browser captures, and build output after validation.
 - Added a dedicated local-network launcher that binds the web server to all interfaces while opening the loopback URL locally.
 - Confirmed the running server listens on `0.0.0.0:3080` and responds through Ethernet address `192.168.1.10`.
 - Confirmed Windows Firewall has enabled inbound Node.js rules restricted to the Private profile.
+- Replaced continuous 100 ms RMS polling with one shared demand-driven backend stream using a 150 ms post-response cadence.
+- Added browser visibility subscriptions so hidden pages suspend demand and polling stops with no active viewers.
+- Preserved strict one-cycle backpressure, cached the latest sample for new subscribers, and suppressed unchanged meter broadcasts.
+- Added tests for idle/active subscription lifecycle, multiple browser clients, scoped fan-out, cached delivery, slow-reply backpressure, reconnects, unchanged samples, and query-rate limits.
+- All 13 backend tests and 5 frontend tests passed; TypeScript type checking and the Vite production build passed.
+- Launched the production application in Firefox from `C:\Program Files (x86)\Mozilla Firefox\firefox.exe` at 1280×800 and confirmed the rendered connection UI.
+- A live MixBoard instance was unavailable, so production RMS payload size and visual meter cadence could not be measured against hardware.
 
 ## Files changed by the current task
 
-- `C:\Users\Mik\Desktop\SoundFlexControl\Start SoundFlex Control.cmd`
-- `C:\Users\Mik\Desktop\SoundFlexControl\Start SoundFlex Control on Local Network.cmd`
-- `C:\Users\Mik\Desktop\SoundFlexControl\Setup SoundFlex Control.cmd`
-- `C:\Users\Mik\Desktop\SoundFlexControl\launcher\open-browser.ps1`
-- `C:\Users\Mik\Desktop\SoundFlexControl\README.md`
-- `C:\Users\Mik\Desktop\SoundFlexControl\agent\soundflex_web_controller\STATUS.md`
+- `agent/soundflex_web_controller/PLAN.md`
+- `agent/soundflex_web_controller/STATUS.md`
 
-No MixBoard Java/protocol source was changed during Task 5.
+No application or MixBoard source was changed while planning Task 7.

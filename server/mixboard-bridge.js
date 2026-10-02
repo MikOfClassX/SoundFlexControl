@@ -27,7 +27,9 @@ export class MixBoardBridge extends EventEmitter {
   #status = "disconnected";
   #meterTimer = null;
   #meterInFlight = false;
+  #meterActive = false;
   #meterSequence = 0;
+  #latestMeters = null;
   #periodicReconcileTimer = null;
   #reconcileTimer = null;
   #pendingReconcile = null;
@@ -40,7 +42,7 @@ export class MixBoardBridge extends EventEmitter {
     commandOptions,
     eventOptions,
     reconnectDelays = [250, 500, 1000, 2000, 5000],
-    meterIntervalMs = 100,
+    meterIntervalMs = 150,
     reconcileIntervalMs = 5000,
     reconcileDebounceMs = 50,
   } = {}) {
@@ -63,6 +65,22 @@ export class MixBoardBridge extends EventEmitter {
 
   get status() {
     return this.#status;
+  }
+
+  get latestMeters() {
+    return this.#status === "connected" ? this.#latestMeters : null;
+  }
+
+  setMeterActive(active) {
+    if (typeof active !== "boolean") throw new TypeError("Meter activity must be a Boolean");
+    if (active === this.#meterActive) return;
+    this.#meterActive = active;
+    if (active) {
+      this.#scheduleMeterPoll(0);
+    } else {
+      clearTimeout(this.#meterTimer);
+      this.#meterTimer = null;
+    }
   }
 
   async connect(settings) {
@@ -90,6 +108,7 @@ export class MixBoardBridge extends EventEmitter {
     this.#eventsDuringRefresh = [];
     this.#cancelPendingActions();
     this.#snapshot = null;
+    this.#latestMeters = null;
     this.#emitStatus("disconnected");
   }
 
@@ -166,6 +185,7 @@ export class MixBoardBridge extends EventEmitter {
     const onClose = ({ intentional }) => {
       if (!intentional && this.#desired && generation === this.#generation) {
         this.#stopCoordination();
+        this.#latestMeters = null;
         commandClient.close();
         eventClient.close();
         this.#emitStatus("reconnecting");
@@ -253,12 +273,8 @@ export class MixBoardBridge extends EventEmitter {
     return snapshot?.soundFlex;
   }
 
-  #startCoordination(generation) {
-    if (this.#meterIntervalMs > 0) {
-      this.#meterTimer = setInterval(() => this.#pollMeters(generation), this.#meterIntervalMs);
-      this.#meterTimer.unref?.();
-      this.#pollMeters(generation);
-    }
+  #startCoordination() {
+    this.#scheduleMeterPoll(0);
     if (this.#reconcileIntervalMs > 0) {
       this.#periodicReconcileTimer = setInterval(() => {
         this.refreshSnapshot().catch((error) => this.#reportCoordinationError(error));
@@ -268,7 +284,7 @@ export class MixBoardBridge extends EventEmitter {
   }
 
   #stopCoordination() {
-    clearInterval(this.#meterTimer);
+    clearTimeout(this.#meterTimer);
     clearInterval(this.#periodicReconcileTimer);
     clearTimeout(this.#reconcileTimer);
     this.#meterTimer = null;
@@ -278,23 +294,42 @@ export class MixBoardBridge extends EventEmitter {
     this.#meterInFlight = false;
   }
 
+  #scheduleMeterPoll(delay = this.#meterIntervalMs) {
+    if (!this.#meterActive || this.#meterIntervalMs <= 0 || this.#meterTimer || this.#meterInFlight || !this.#desired || !this.#commandClient?.connected) return;
+    const generation = this.#generation;
+    this.#meterTimer = setTimeout(() => {
+      this.#meterTimer = null;
+      this.#pollMeters(generation);
+    }, delay);
+    this.#meterTimer.unref?.();
+  }
+
   async #pollMeters(generation) {
-    if (this.#meterInFlight || !this.#desired || generation !== this.#generation || !this.#commandClient?.connected) return;
+    if (this.#meterInFlight || !this.#meterActive || !this.#desired || generation !== this.#generation || !this.#commandClient?.connected) return;
     const channel = this.#snapshot?.soundFlex?.CURRENT_CHANNEL;
-    if (!CHANNELS.includes(channel)) return;
+    if (!CHANNELS.includes(channel)) {
+      this.#scheduleMeterPoll();
+      return;
+    }
 
     this.#meterInFlight = true;
     const commandClient = this.#commandClient;
     const sequence = ++this.#meterSequence;
     try {
       const meters = await readMeters(commandClient, channel, sequence);
-      if (this.#desired && generation === this.#generation && commandClient === this.#commandClient && channel === this.#snapshot?.soundFlex?.CURRENT_CHANNEL) {
-        this.emit("meters", meters);
+      if (this.#meterActive && this.#desired && generation === this.#generation && commandClient === this.#commandClient && channel === this.#snapshot?.soundFlex?.CURRENT_CHANNEL) {
+        if (!sameMeterValues(this.#latestMeters, meters)) {
+          this.#latestMeters = meters;
+          this.emit("meters", meters);
+        }
       }
     } catch (error) {
       this.#reportCoordinationError(error);
     } finally {
-      if (generation === this.#generation) this.#meterInFlight = false;
+      if (generation === this.#generation && commandClient === this.#commandClient) {
+        this.#meterInFlight = false;
+        this.#scheduleMeterPoll();
+      }
     }
   }
 
@@ -372,6 +407,12 @@ export class MixBoardBridge extends EventEmitter {
     this.#status = status;
     this.emit("status", { status, settings: this.settings, ...extra });
   }
+}
+
+function sameMeterValues(previous, next) {
+  return previous?.channel === next.channel
+    && JSON.stringify(previous.videoInputs) === JSON.stringify(next.videoInputs)
+    && JSON.stringify(previous.outputTracks) === JSON.stringify(next.outputTracks);
 }
 
 function coalescingKey(name, payload) {

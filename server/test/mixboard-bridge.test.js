@@ -104,6 +104,7 @@ test("MixBoardBridge snapshots, executes actions, forwards events, and reconnect
 test("MixBoardBridge bounds meter polling while replies are slow", async (context) => {
   const commandSockets = new Set();
   let inputMeterQueries = 0;
+  const inputMeterQueryTimes = [];
   const commandServer = net.createServer((socket) => {
     commandSockets.add(socket);
     socket.on("close", () => commandSockets.delete(socket));
@@ -119,7 +120,9 @@ test("MixBoardBridge bounds meter polling while replies are slow", async (contex
           socket.write(`${encode({ ID: channel, NAME: channel, PREVIEW: 0, PROGRAM: 0, KEYER: [], TRANSITION_STATUS: "TRANSITION_FINISHED" })}\n`);
         } else if (command === "MBC_GETVIDEOINPUTRMS") {
           inputMeterQueries += 1;
-          setTimeout(() => socket.write(`${encode([[0.1, 0.2]])}\n`), 35);
+          inputMeterQueryTimes.push(Date.now());
+          const value = Math.min(inputMeterQueries, 2) / 10;
+          setTimeout(() => socket.write(`${encode([[value, 0.2]])}\n`), 35);
         } else if (command === "MBC_GETAUDIOTRACKRMS CHANNEL=CH_1") {
           setTimeout(() => socket.write(`${encode([0.3, 0.4, 0, 0, 0, 0, 0, 0])}\n`), 35);
         }
@@ -142,6 +145,7 @@ test("MixBoardBridge bounds meter polling while replies are slow", async (contex
   const bridge = new MixBoardBridge({
     commandOptions: { connectTimeoutMs: 500, commandTimeoutMs: 500 },
     eventOptions: { connectTimeoutMs: 500 },
+    reconnectDelays: [20],
     meterIntervalMs: 5,
     reconcileIntervalMs: 0,
   });
@@ -155,13 +159,33 @@ test("MixBoardBridge bounds meter polling while replies are slow", async (contex
     commandPort: commandServer.address().port,
     eventPort: eventServer.address().port,
   });
+  await delay(40);
+  assert.equal(inputMeterQueries, 0, "meters were queried without an active viewer");
+
+  bridge.setMeterActive(true);
   await waitUntil(() => meters.length >= 2, 1000);
 
   assert.equal(meters[0].channel, "CH_1");
   assert.deepEqual(meters[0].videoInputs, [[0.1, 0.2]]);
   assert.ok(meters[1].sequence > meters[0].sequence);
   assert.ok(inputMeterQueries <= meters.length + 1, "meter polling queued obsolete cycles");
+  await waitUntil(() => inputMeterQueries >= 4, 1000);
+  assert.equal(meters.length, 2, "unchanged meter samples were emitted");
+  assert.ok(inputMeterQueryTimes.slice(1).every((time, index) => time - inputMeterQueryTimes[index] >= 60), "slow replies did not apply backpressure to the query rate");
+
+  const beforeReconnect = inputMeterQueries;
+  for (const socket of commandSockets) socket.destroy();
+  await waitUntil(() => inputMeterQueries > beforeReconnect, 1500);
+
+  bridge.setMeterActive(false);
+  const stoppedAt = inputMeterQueries;
+  await delay(100);
+  assert.equal(inputMeterQueries, stoppedAt, "meter polling continued after the last viewer suspended");
 });
+
+function delay(milliseconds) {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
 
 function onceBridgeEvent(emitter, event) {
   return new Promise((resolve) => emitter.once(event, resolve));

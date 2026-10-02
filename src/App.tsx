@@ -39,8 +39,13 @@ export default function App() {
       }
     });
 
+    const updateMeterActivity = () => api.setMetersActive(document.visibilityState === "visible");
+    document.addEventListener("visibilitychange", updateMeterActivity);
+    updateMeterActivity();
     api.open().then(() => setBridgeReady(true)).catch((reason: Error) => setError(reason.message));
     return () => {
+      document.removeEventListener("visibilitychange", updateMeterActivity);
+      api.setMetersActive(false);
       unsubscribe();
       api.close();
     };
