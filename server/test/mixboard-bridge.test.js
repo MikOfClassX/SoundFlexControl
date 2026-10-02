@@ -183,6 +183,108 @@ test("MixBoardBridge bounds meter polling while replies are slow", async (contex
   assert.equal(inputMeterQueries, stoppedAt, "meter polling continued after the last viewer suspended");
 });
 
+test("continuous native audio events cannot starve button reconciliation", async (context) => {
+  const mock = await audioMock(context);
+  await mock.connect();
+  mock.enabled = true;
+  const stream = setInterval(() => mock.emitAudioEvent(), 5);
+  context.after(() => clearInterval(stream));
+  try {
+    await waitUntil(() => mock.bridge.snapshot.soundFlex.VIDEOINPUT_AUDIOINFO[0].AUDIO_ENABLED.CH_0, 500);
+    assert.ok(mock.queries >= 2, "no snapshot was requested while events continued");
+  } finally {
+    clearInterval(stream);
+  }
+});
+
+test("web button mutation during an old snapshot triggers a fresh confirmed state", async (context) => {
+  const mock = await audioMock(context);
+  await mock.connect();
+  // Hold the old state reply while a browser action is queued behind it.
+  mock.holdNext = true;
+  const oldRefresh = mock.bridge.refreshSnapshot();
+  await waitUntil(() => Boolean(mock.release), 500);
+  const action = mock.bridge.executeAction("setAudioEnabled", { channel: "CH_0", videoInputId: 0, enabled: true });
+  mock.emitAudioEvent();
+  mock.release();
+  await Promise.all([oldRefresh, action]);
+  await waitUntil(() => mock.queries >= 3 && mock.bridge.snapshot.soundFlex.VIDEOINPUT_AUDIOINFO[0].AUDIO_ENABLED.CH_0, 500);
+  assert.ok(mock.queries >= 3, "mutation was lost behind the active refresh");
+});
+
+test("web disable stays off across fade-active snapshots and can be reversed", async (context) => {
+  const mock = await audioMock(context);
+  mock.enabled = true;
+  mock.fadeOutMs = 250;
+  await mock.connect();
+  await mock.bridge.executeAction("setAudioEnabled", { channel: "CH_0", videoInputId: 0, enabled: false });
+  assert.equal(mock.bridge.snapshot.soundFlex.VIDEOINPUT_AUDIOINFO[0].AUDIO_ENABLED.CH_0, false);
+  await waitUntil(() => mock.queries >= 2, 500);
+  assert.equal(mock.bridge.snapshot.soundFlex.VIDEOINPUT_AUDIOINFO[0].AUDIO_ENABLED.CH_0, false, "fade-active snapshot reverted the confirmed button");
+  await mock.bridge.executeAction("setAudioEnabled", { channel: "CH_0", videoInputId: 0, enabled: true });
+  assert.equal(mock.bridge.snapshot.soundFlex.VIDEOINPUT_AUDIOINFO[0].AUDIO_ENABLED.CH_0, true);
+});
+
+test("native disable settles after fade without waiting for the five-second snapshot", async (context) => {
+  const mock = await audioMock(context);
+  mock.enabled = true;
+  await mock.connect();
+  mock.enabled = false;
+  mock.fadeUntil = Date.now() + 200;
+  mock.emitAudioEvent(false);
+  await waitUntil(() => mock.queries >= 2, 500);
+  assert.equal(mock.bridge.snapshot.soundFlex.VIDEOINPUT_AUDIOINFO[0].AUDIO_ENABLED.CH_0, true, "snapshot should reflect active Java fade");
+  await waitUntil(() => !mock.bridge.snapshot.soundFlex.VIDEOINPUT_AUDIOINFO[0].AUDIO_ENABLED.CH_0, 800);
+  assert.ok(mock.queries >= 3, "no post-fade snapshot was taken");
+});
+
+async function audioMock(context) {
+  const sockets = new Set();
+  const eventSockets = new Set();
+  const mock = { enabled: false, fadeOutMs: 0, fadeUntil: 0, queries: 0, holdNext: false, release: null };
+  const commandServer = net.createServer((socket) => {
+    sockets.add(socket);
+    socket.on("close", () => sockets.delete(socket));
+    const framer = new LineFramer();
+    socket.on("data", (chunk) => {
+      for (const command of framer.push(chunk)) {
+        if (command === "MBC_GETVIDEOINPUTLIST") {
+          socket.write(`${encode({ VIDEOINPUT: [], MAX_SUPPORTED_INPUTS: 1 })}\n`);
+        } else if (command === "MBC_GETSOUNDFLEXINFO") {
+          mock.queries += 1;
+          const reply = `${encode({ CURRENT_CHANNEL: "CH_0", VIDEOINPUT_AUDIOINFO: [{ AUDIO_ENABLED: { CH_0: mock.enabled || Date.now() < mock.fadeUntil, CH_1: false, CH_2: false, CH_3: false } }] })}\n`;
+          if (mock.holdNext) {
+            mock.holdNext = false;
+            mock.release = () => socket.write(reply);
+          } else socket.write(reply);
+        } else if (command.startsWith("MBC_GETMIXBOARDINFO")) {
+          socket.write(`${encode({ KEYER: [] })}\n`);
+        } else if (command.startsWith("MBC_SETAUDIOENABLED")) {
+          mock.enabled = command.includes("ENABLED=TRUE");
+          mock.fadeUntil = mock.enabled ? 0 : Date.now() + mock.fadeOutMs;
+          socket.write("Ok\n");
+        } else socket.write("Ok\n");
+      }
+    });
+  });
+  const eventServer = net.createServer((socket) => {
+    eventSockets.add(socket);
+    socket.on("close", () => eventSockets.delete(socket));
+  });
+  await Promise.all([listen(commandServer), listen(eventServer)]);
+  mock.bridge = new MixBoardBridge({ meterIntervalMs: 0, reconcileIntervalMs: 0, reconcileDebounceMs: 30 });
+  context.after(async () => {
+    mock.bridge.disconnect();
+    for (const socket of [...sockets, ...eventSockets]) socket.destroy();
+    await Promise.all([closeServer(commandServer), closeServer(eventServer)]);
+  });
+  mock.connect = () => mock.bridge.connect({ host: "127.0.0.1", commandPort: commandServer.address().port, eventPort: eventServer.address().port });
+  mock.emitAudioEvent = (enabled = true) => {
+    for (const socket of eventSockets) socket.write(`VIDEOINPUTEVENT VIDEOINPUTID=0, TYPE=AUDIO_ENABLED, VALUE="${enabled}"\n`);
+  };
+  return mock;
+}
+
 function delay(milliseconds) {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }

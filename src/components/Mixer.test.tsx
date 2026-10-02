@@ -73,6 +73,17 @@ describe("SoundFlex mixer", () => {
     expect((screen.getByRole("button", { name: /Camera 1: CAMERA/u }) as HTMLButtonElement).disabled).toBe(false);
     expect((screen.getByRole("button", { name: /IN 1: NONE/u }) as HTMLButtonElement).disabled).toBe(true);
   });
+
+  it("keeps the maximum 24 inputs in the reference two-row composition", () => {
+    const snapshot = createSnapshot();
+    snapshot.videoInputs.MAX_SUPPORTED_INPUTS = 24;
+    const { container } = render(<Mixer meters={null} onAction={() => undefined} snapshot={snapshot} />);
+    const grid = container.querySelector<HTMLElement>(".input-grid");
+
+    expect(grid?.children).toHaveLength(24);
+    expect(grid?.style.getPropertyValue("--input-columns")).toBe("12");
+    expect(grid?.style.getPropertyValue("--input-count")).toBe("24");
+  });
 });
 
 function createSnapshot(): SoundFlexSnapshot {

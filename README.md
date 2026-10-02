@@ -79,7 +79,9 @@ The bridge:
 - ignores event `PING` heartbeats;
 - obtains VideoInput, SoundFlex, and all four MixBoard channel snapshots;
 - applies unambiguous MixBoard, VideoInput, and audio events immediately;
-- reconciles ambiguous audio events and successful mutations with SoundFlex snapshots;
+- reconciles ambiguous per-input enable, AFV, and volume events with SoundFlex snapshots without guessing the affected channel;
+- bounds event reconciliation from the first event so continuous audio events cannot postpone button updates, retains changes received during an active refresh, and prioritizes state reconciliation over new meter cycles;
+- immediately displays successfully confirmed web enable/disable commands and briefly rechecks SoundFlex state after enable changes to follow native audio fades; snapshots keep `AUDIO_ENABLED` true during fade-out (500 ms by default, up to 2 seconds), so settling checks run 100 ms after each completed refresh for at most 2.5 seconds after a change;
 - rebuilds the complete state every five seconds and after reconnecting;
 - uses one shared, demand-driven meter stream for every browser client, polling only while at least one visible page is subscribed;
 - polls input and selected-channel output RMS at most every 150 ms, starts the next cycle only after both replies complete, and suppresses unchanged browser updates;
@@ -99,7 +101,7 @@ The exact response byte count depends on the configured VideoInput count and JSO
 
 ## Browser compatibility
 
-The production application was launched and DOM-rendered successfully with the installed current Microsoft Edge during final validation. The Task 6 production build also rendered successfully in headless Firefox at 1280×800 using `C:\Program Files (x86)\Mozilla Firefox\firefox.exe`. The application uses standard React, WebSocket, CSS Grid, SVG mask, range-input, Page Visibility, and `localStorage` APIs supported by current Edge, Firefox, and Chrome. Chrome was not installed on the validation workstation, so its runtime check remains an environment-dependent deployment check.
+The production application was launched and DOM-rendered successfully with the installed current Microsoft Edge during final validation. The production build also rendered successfully in headless Firefox at 1280×800 using `C:\Program Files (x86)\Mozilla Firefox\firefox.exe`. The layout has explicit automated contracts for 3840×2160, 1920×1080, 1366×768, and 1280×720 browser viewports. The application uses standard React, WebSocket, CSS Grid, CSS container queries and units, SVG mask, range-input, Page Visibility, and `localStorage` APIs supported by current Edge, Firefox, and Chrome. Chrome was not installed on the validation workstation, so its runtime check remains an environment-dependent deployment check.
 
 ## Troubleshooting
 
@@ -114,7 +116,7 @@ The production application was launched and DOM-rendered successfully with the i
 
 ## Interface notes
 
-- The mixer uses the same two-row input ordering as the native panel at desktop sizes and switches to a horizontally scrollable single row on short screens.
+- The mixer uses the same two-row input ordering as the native panel and proportionally scales its header, output bank, strips, controls, type, and spacing to fit desktop and laptop browser viewports without page scrolling. Very narrow mobile layouts retain an internal horizontal fallback rather than making controls unusably small.
 - Right-click an input T0–T3 assignment button to select that input's displayed meter track, matching the native local meter-selection behavior.
 - The audio-settings button is intentionally visible but disabled.
 - The ClassX and SoundFlex names, interface, and copied SVG artwork are property of ClassX srl — https://www.classx.it.

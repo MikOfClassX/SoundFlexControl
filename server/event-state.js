@@ -110,6 +110,8 @@ function reduceVideoInputEvent(snapshot, fields) {
     case "AUDIO_ENABLED":
     case "AUDIO_FOLLOW_VIDEO_ENABLED":
     case "AUDIO_VOLUME_CHANGED":
+      // These events do not reliably identify the affected output channel/field.
+      // Never guess from CURRENT_CHANNEL: the native panel may be on another channel.
       return unchanged("soundFlex");
     default:
       return unchanged(null);

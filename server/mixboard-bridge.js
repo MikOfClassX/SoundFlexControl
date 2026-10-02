@@ -37,6 +37,9 @@ export class MixBoardBridge extends EventEmitter {
   #refreshKind = null;
   #eventsDuringRefresh = [];
   #actionSlots = new Map();
+  #audioEnableTargets = new Map();
+  #audioSettleUntil = 0;
+  #audioSettleTimer = null;
 
   constructor({
     commandOptions,
@@ -202,6 +205,11 @@ export class MixBoardBridge extends EventEmitter {
     const event = parseEventRecord(line);
     if (!event) return;
 
+    if (event.prefix === "VIDEOINPUTEVENT" && event.fields.TYPE === "AUDIO_ENABLED") {
+      // Native AUDIO_ENABLED snapshots include active fade-out, not just the
+      // requested switch state. Follow the fade through its maximum 2s duration.
+      this.#audioSettleUntil = Date.now() + 2500;
+    }
     if (this.#refreshOperation) this.#eventsDuringRefresh.push(event);
     const result = reduceEvent(this.#snapshot, event);
     if (result.changed) {
@@ -233,6 +241,8 @@ export class MixBoardBridge extends EventEmitter {
         this.#snapshot = reduced.snapshot;
         if (reduced.reconcile === "full" || (!followup && reduced.reconcile)) followup = reduced.reconcile;
       }
+      this.#applyAudioEnableTargets();
+      this.#scheduleAudioSettle();
       this.emit(kind === "full" ? "snapshot" : "state", this.#snapshot);
       if (followup) this.#scheduleReconcile(followup);
       return this.#snapshot;
@@ -244,22 +254,28 @@ export class MixBoardBridge extends EventEmitter {
         this.#refreshOperation = null;
         this.#refreshKind = null;
         this.#eventsDuringRefresh = [];
+        if (this.#pendingReconcile) this.#scheduleReconcile(this.#pendingReconcile, 0);
       }
     }).catch(() => undefined);
     return operation;
   }
 
-  #scheduleReconcile(kind) {
+  #scheduleReconcile(kind, delay = this.#reconcileDebounceMs) {
     if (!this.#desired || !this.#commandClient?.connected) return;
     if (kind === "full" || !this.#pendingReconcile) this.#pendingReconcile = kind;
-    clearTimeout(this.#reconcileTimer);
+    // Bound the wait from the FIRST event, not the last. Continuous native audio
+    // events must not keep postponing state updates indefinitely.
+    if (this.#reconcileTimer || this.#refreshOperation) return;
     this.#reconcileTimer = setTimeout(() => {
       this.#reconcileTimer = null;
+      // Keep the request pending if another refresh started in the meantime.
+      // Its completion will drain it rather than silently dropping the update.
+      if (this.#refreshOperation) return;
       const requested = this.#pendingReconcile;
       this.#pendingReconcile = null;
       const refresh = requested === "full" ? this.refreshSnapshot() : this.#refreshSoundFlex();
       refresh.catch((error) => this.#reportCoordinationError(error));
-    }, this.#reconcileDebounceMs);
+    }, delay);
     this.#reconcileTimer.unref?.();
   }
 
@@ -271,6 +287,28 @@ export class MixBoardBridge extends EventEmitter {
     }
     const snapshot = await this.#startRefresh("soundFlex");
     return snapshot?.soundFlex;
+  }
+
+  #applyAudioEnableTargets() {
+    for (const [key, target] of this.#audioEnableTargets) {
+      const enabled = this.#snapshot?.soundFlex?.VIDEOINPUT_AUDIOINFO?.[target.videoInputId]?.AUDIO_ENABLED;
+      if (!enabled || enabled[target.channel] === target.enabled || Date.now() >= target.expiresAt) {
+        this.#audioEnableTargets.delete(key);
+      } else {
+        // Only a successful, explicitly scoped web command can override a
+        // fade-active snapshot. Unscoped Java events never guess the channel.
+        enabled[target.channel] = target.enabled;
+      }
+    }
+  }
+
+  #scheduleAudioSettle() {
+    if (!this.#desired || this.#audioSettleTimer || Date.now() >= this.#audioSettleUntil) return;
+    this.#audioSettleTimer = setTimeout(() => {
+      this.#audioSettleTimer = null;
+      this.#scheduleReconcile("soundFlex", 0);
+    }, 100);
+    this.#audioSettleTimer.unref?.();
   }
 
   #startCoordination() {
@@ -287,6 +325,10 @@ export class MixBoardBridge extends EventEmitter {
     clearTimeout(this.#meterTimer);
     clearInterval(this.#periodicReconcileTimer);
     clearTimeout(this.#reconcileTimer);
+    clearTimeout(this.#audioSettleTimer);
+    this.#audioSettleTimer = null;
+    this.#audioSettleUntil = 0;
+    this.#audioEnableTargets.clear();
     this.#meterTimer = null;
     this.#periodicReconcileTimer = null;
     this.#reconcileTimer = null;
@@ -308,6 +350,12 @@ export class MixBoardBridge extends EventEmitter {
     if (this.#meterInFlight || !this.#meterActive || !this.#desired || generation !== this.#generation || !this.#commandClient?.connected) return;
     const channel = this.#snapshot?.soundFlex?.CURRENT_CHANNEL;
     if (!CHANNELS.includes(channel)) {
+      this.#scheduleMeterPoll();
+      return;
+    }
+
+    // State changes take precedence over starting another background meter cycle.
+    if (this.#pendingReconcile || this.#refreshOperation) {
       this.#scheduleMeterPoll();
       return;
     }
@@ -383,7 +431,19 @@ export class MixBoardBridge extends EventEmitter {
       if (result !== "Ok") throw new Error(`${command.split(" ", 1)[0]} failed: ${result}`);
       results.push(result);
     }
-    this.#scheduleReconcile("soundFlex");
+    if (name === "setAudioEnabled" && this.#snapshot) {
+      const expiresAt = Date.now() + 2500;
+      this.#audioEnableTargets.set(`${payload.channel}:${payload.videoInputId}`, { ...payload, expiresAt });
+      this.#audioSettleUntil = expiresAt;
+      this.#snapshot = structuredClone(this.#snapshot);
+      const enabled = this.#snapshot.soundFlex.VIDEOINPUT_AUDIOINFO?.[payload.videoInputId]?.AUDIO_ENABLED;
+      if (enabled) {
+        enabled[payload.channel] = payload.enabled;
+        this.#snapshot.receivedAt = new Date().toISOString();
+        this.emit("state", this.#snapshot);
+      }
+    }
+    this.#scheduleReconcile("soundFlex", 0);
     return { name, results, coalesced: false };
   }
 

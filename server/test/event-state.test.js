@@ -28,7 +28,7 @@ test("event reducer applies unambiguous MixBoard and audio changes", () => {
   assert.equal(snapshot.soundFlex.PREVIEW_VOLUME, 0.6);
 });
 
-test("event reducer applies global input state and requests reconciliation for ambiguous channel state", () => {
+test("event reducer applies global input state and reconciles ambiguous channel state without guessing", () => {
   let snapshot = createSnapshot();
   let result = reduceEvent(snapshot, parseEventRecord('VIDEOINPUTEVENT VIDEOINPUTID=0, TYPE=AUDIO_TRACK_ENABLED, VALUE="5"'));
   snapshot = result.snapshot;
@@ -42,6 +42,16 @@ test("event reducer applies global input state and requests reconciliation for a
   result = reduceEvent(snapshot, parseEventRecord('VIDEOINPUTEVENT VIDEOINPUTID=0, TYPE=AUDIO_ENABLED, VALUE="true"'));
   assert.equal(result.changed, false);
   assert.equal(result.reconcile, "soundFlex");
+  assert.equal(result.snapshot.soundFlex.VIDEOINPUT_AUDIOINFO[0].AUDIO_ENABLED.CH_0, false);
+
+  for (const type of ["AUDIO_ENABLED", "AUDIO_FOLLOW_VIDEO_ENABLED", "AUDIO_VOLUME_CHANGED"]) {
+    // VALUE may describe global or per-channel state; do not assign it to the
+    // selected channel merely because a Java panel emitted an event.
+    result = reduceEvent(snapshot, parseEventRecord(`VIDEOINPUTEVENT VIDEOINPUTID=0, TYPE=${type}, VALUE="5"`));
+    assert.equal(result.changed, false);
+    assert.equal(result.snapshot, snapshot);
+    assert.equal(result.reconcile, "soundFlex");
+  }
 });
 
 function createSnapshot() {
