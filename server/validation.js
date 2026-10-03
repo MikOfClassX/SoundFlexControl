@@ -39,9 +39,12 @@ export function validateVideoInputId(value, maxInputs) {
   return value;
 }
 
-export function validateVolume(value) {
-  if (typeof value !== "number" || !Number.isFinite(value) || value < 0 || value > 1) {
-    throw new RangeError("Volume must be a finite number from 0 to 1");
+// Native input/output faders allow +10 dB; the preview knob remains 0..1.
+export const MAX_FADER_VOLUME = 10 ** (10 / 20);
+
+export function validateVolume(value, maxVolume = 1) {
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 0 || value > maxVolume) {
+    throw new RangeError(`Volume must be a finite number from 0 to ${maxVolume}`);
   }
   return value;
 }

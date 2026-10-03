@@ -26,7 +26,7 @@ export default function Fader({ value, label, disabled = false, onChange }: Fade
   return (
     <div className="fader" title={`${label}: ${formatDb(draft)}`}>
       <div className="fader-scale" aria-hidden="true">
-        <span>0</span><span>−10</span><span>−20</span><span>−30</span><span>−40</span><span>−50</span><span>−∞</span>
+        <span>+10</span><span>0</span><span>−10</span><span>−20</span><span>−30</span><span>−40</span><span>−50</span><span>−∞</span>
       </div>
       <input
         aria-label={label}

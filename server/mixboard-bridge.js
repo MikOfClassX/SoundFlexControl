@@ -241,7 +241,13 @@ export class MixBoardBridge extends EventEmitter {
         this.#snapshot = reduced.snapshot;
         if (reduced.reconcile === "full" || (!followup && reduced.reconcile)) followup = reduced.reconcile;
       }
-      this.#applyAudioEnableTargets();
+      // A disable refreshed during fade-out needs another native GUI read once
+      // the real model confirms that the fade has finished.
+      const nativeRefreshNeeded = this.#applyAudioEnableTargets();
+      if (nativeRefreshNeeded) {
+        await this.#requestNativeGuiRefresh(commandClient);
+        if (!this.#desired || generation !== this.#generation || commandClient !== this.#commandClient) return null;
+      }
       this.#scheduleAudioSettle();
       this.emit(kind === "full" ? "snapshot" : "state", this.#snapshot);
       if (followup) this.#scheduleReconcile(followup);
@@ -290,9 +296,11 @@ export class MixBoardBridge extends EventEmitter {
   }
 
   #applyAudioEnableTargets() {
+    let nativeRefreshNeeded = false;
     for (const [key, target] of this.#audioEnableTargets) {
       const enabled = this.#snapshot?.soundFlex?.VIDEOINPUT_AUDIOINFO?.[target.videoInputId]?.AUDIO_ENABLED;
       if (!enabled || enabled[target.channel] === target.enabled || Date.now() >= target.expiresAt) {
+        if (!target.enabled && enabled?.[target.channel] === false) nativeRefreshNeeded = true;
         this.#audioEnableTargets.delete(key);
       } else {
         // Only a successful, explicitly scoped web command can override a
@@ -300,6 +308,7 @@ export class MixBoardBridge extends EventEmitter {
         enabled[target.channel] = target.enabled;
       }
     }
+    return nativeRefreshNeeded;
   }
 
   #scheduleAudioSettle() {
@@ -443,8 +452,23 @@ export class MixBoardBridge extends EventEmitter {
         this.emit("state", this.#snapshot);
       }
     }
+    // Refresh native controls only after all mutation commands succeed. Keep
+    // this out of results: it acknowledges a visual request, not an audio edit.
+    await this.#requestNativeGuiRefresh(this.#commandClient);
     this.#scheduleReconcile("soundFlex", 0);
     return { name, results, coalesced: false };
+  }
+
+  async #requestNativeGuiRefresh(commandClient) {
+    if (!this.#desired || commandClient !== this.#commandClient || !commandClient?.connected) return;
+    try {
+      const result = await commandClient.send("MBC_UPDATESOUNDFLEXGUI");
+      if (result !== "Ok") throw new Error(`MBC_UPDATESOUNDFLEXGUI failed: ${result}`);
+    } catch (error) {
+      // The mutation is already confirmed; report refresh failure separately
+      // rather than falsely claiming that the audio command failed.
+      this.#reportCoordinationError(error);
+    }
   }
 
   #reportCoordinationError(error) {

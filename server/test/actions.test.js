@@ -21,6 +21,17 @@ test("all exposed SoundFlex actions produce constrained MBControl commands", () 
   }
 });
 
+test("input/output faders accept native +10 dB gain while preview remains limited to unity", () => {
+  const gain = 10 ** (10 / 20);
+  assert.deepEqual(buildActionCommands("setTrackVolume", { track: "T1", volume: gain }, 24), [`MBC_SETAUDIOTRACKVOLUME AUDIO_TRACK=T1 VOLUME=${gain}`]);
+  assert.deepEqual(buildActionCommands("setInputVolume", { channel: "CH_0", videoInputId: 0, volume: gain }, 24), [`MBC_SETAUDIOMASTERVOLUMEPERCHANNEL CHANNEL=CH_0 VIDEOINPUTID=0 VOLUME=${gain}`]);
+  for (const volume of [gain + 0.001, -1, NaN, Infinity, "2"]) {
+    assert.throws(() => buildActionCommands("setTrackVolume", { track: "T1", volume }, 24), /Volume/u);
+    assert.throws(() => buildActionCommands("setInputVolume", { channel: "CH_0", videoInputId: 0, volume }, 24), /Volume/u);
+  }
+  assert.throws(() => buildActionCommands("setPreviewVolume", { volume: gain }, 24), /0 to 1/u);
+});
+
 test("action validation blocks command injection and invalid ranges", () => {
   assert.throws(() => buildActionCommands("selectChannel", { channel: "CH_0\nQUIT" }, 24), /Invalid channel/u);
   assert.throws(() => buildActionCommands("setPreviewVolume", { volume: 1.1 }, 24), /0 to 1/u);

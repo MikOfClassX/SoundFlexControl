@@ -1,4 +1,5 @@
 import {
+  MAX_FADER_VOLUME,
   validateBoolean,
   validateChannel,
   validateTrack,
@@ -35,7 +36,7 @@ export function buildActionCommands(name, payload, maxInputs) {
       return [`MBC_SETAUDIOPREVIEWVOLUME VOLUME=${validateVolume(value.volume)}`];
     case "setTrackVolume":
       return [
-        `MBC_SETAUDIOTRACKVOLUME AUDIO_TRACK=${validateTrack(value.track)} VOLUME=${validateVolume(value.volume)}`,
+        `MBC_SETAUDIOTRACKVOLUME AUDIO_TRACK=${validateTrack(value.track)} VOLUME=${validateVolume(value.volume, MAX_FADER_VOLUME)}`,
       ];
     case "setAudioEnabled":
       return [buildInputBooleanCommand("MBC_SETAUDIOENABLED", value, maxInputs, true)];
@@ -51,7 +52,7 @@ export function buildActionCommands(name, payload, maxInputs) {
       ];
     case "setInputVolume":
       return [
-        `MBC_SETAUDIOMASTERVOLUMEPERCHANNEL CHANNEL=${validateChannel(value.channel)} VIDEOINPUTID=${validateVideoInputId(value.videoInputId, maxInputs)} VOLUME=${validateVolume(value.volume)}`,
+        `MBC_SETAUDIOMASTERVOLUMEPERCHANNEL CHANNEL=${validateChannel(value.channel)} VIDEOINPUTID=${validateVideoInputId(value.videoInputId, maxInputs)} VOLUME=${validateVolume(value.volume, MAX_FADER_VOLUME)}`,
       ];
     default:
       throw new RangeError(`Unsupported SoundFlex action: ${String(name)}`);

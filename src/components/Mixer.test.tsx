@@ -67,6 +67,25 @@ describe("SoundFlex mixer", () => {
     expect(onAction.mock.calls.at(-1)?.[0]).toMatchObject({ name: "setTrackVolume", payload: { track: "T1" } });
   });
 
+  it("keeps preview selection and the solo indicator driven by existing state", () => {
+    const snapshot = createSnapshot();
+    snapshot.soundFlex.SOLO_ENABLED = true;
+    const onAction = vi.fn();
+    const { rerender } = render(<Mixer meters={null} onAction={onAction} snapshot={snapshot} />);
+    expect(screen.getByRole("img", { name: "Solo preview mode" }).classList.contains("active")).toBe(true);
+    for (const track of ["T0", "T1", "T2", "T3"]) {
+      const button = screen.getByRole("button", { name: `Preview ${track}` }) as HTMLButtonElement;
+      expect(button.disabled).toBe(true);
+      expect(button.getAttribute("aria-pressed")).toBe("false");
+    }
+    snapshot.soundFlex.SOLO_ENABLED = false;
+    snapshot.soundFlex.PREVIEW_TRACK = "T2";
+    rerender(<Mixer meters={null} onAction={onAction} snapshot={snapshot} />);
+    expect(screen.getByRole("img", { name: "Solo preview mode" }).classList.contains("active")).toBe(false);
+    expect(screen.getByRole("button", { name: "Preview T2" }).getAttribute("aria-pressed")).toBe("true");
+    expect(onAction).not.toHaveBeenCalled();
+  });
+
   it("renders every discovered slot and disables unconfigured inputs", () => {
     render(<Mixer meters={null} onAction={() => undefined} snapshot={createSnapshot()} />);
 

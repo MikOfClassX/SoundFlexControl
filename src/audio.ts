@@ -1,5 +1,5 @@
 export const MIN_DB = -60;
-export const MAX_DB = 0;
+export const MAX_DB = 10;
 
 export function linearToDb(value: number): number {
   if (!Number.isFinite(value) || value <= 0) return MIN_DB;
@@ -8,11 +8,12 @@ export function linearToDb(value: number): number {
 
 export function dbToLinear(value: number): number {
   if (!Number.isFinite(value) || value <= MIN_DB) return 0;
-  return Math.min(1, 10 ** (value / 20));
+  return 10 ** (Math.min(MAX_DB, value) / 20);
 }
 
 export function meterPercent(value: number): number {
-  return ((linearToDb(value) - MIN_DB) / (MAX_DB - MIN_DB)) * 100;
+  // RMS meters reach full scale at 0 dB, independently of the fader gain range.
+  return ((Math.min(0, linearToDb(value)) - MIN_DB) / -MIN_DB) * 100;
 }
 
 export function formatDb(value: number): string {

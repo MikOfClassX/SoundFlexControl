@@ -7,7 +7,7 @@ The responsive interface follows the native SoundFlex mixer: preview monitor con
 ## Requirements
 
 - A current Node.js installation available in `PATH`. Node.js 24 is used by the current development environment.
-- A MixBoard build exposing MBControl protocol 1.1.
+- A MixBoard build exposing MBControl protocol 1.1 and `MBC_UPDATESOUNDFLEXGUI` for native GUI synchronization.
 - Network access from this machine to MixBoard's command and event ports.
 - A current Edge, Firefox, or Chrome browser.
 
@@ -86,6 +86,9 @@ The bridge:
 - uses one shared, demand-driven meter stream for every browser client, polling only while at least one visible page is subscribed;
 - polls input and selected-channel output RMS at most every 150 ms, starts the next cycle only after both replies complete, and suppresses unchanged browser updates;
 - coalesces queued fader updates so only the latest unsent value for each control is transmitted;
+- sends parameterless `MBC_UPDATESOUNDFLEXGUI` after all mutation commands for a web action return `Ok`, including channel selection; superseded fader actions and failed/invalid actions do not send it;
+- sends another native GUI refresh when a web disable's real SoundFlex state confirms fade completion; ordinary snapshots, meter reads, and native events do not themselves request native refreshes;
+- reports native GUI refresh failures separately without treating already successful audio mutations as failures; the refresh acknowledgement does not mean the native Swing timer has rendered yet;
 - validates and exposes only the SoundFlex actions required by this project;
 - reconnects with bounded backoff and rebuilds the snapshot.
 
@@ -111,12 +114,15 @@ The production application was launched and DOM-rendered successfully with the i
 - **The browser does not open:** leave the launcher running and open the URL printed in its window manually.
 - **The local page does not load:** verify that the launcher reports `SoundFlex Control is available`, and check `http://127.0.0.1:3080/api/health` for `{"ok":true}`.
 - **MixBoard remains disconnected:** verify the remote host and both ports, MBControl protocol 1.1 availability, MixBoard service state, and intervening Windows/network firewall rules.
+- **Native SoundFlex controls do not follow web edits:** rebuild/restart MixBoard with `MBC_UPDATESOUNDFLEXGUI` support and restart the Node bridge to load this integration. An older MixBoard may still apply audio edits but report refresh-command errors. A closed native panel refreshes current state when opened, and active knob/fader dragging defers the native refresh until release.
 - **Settings need to be reset:** clear the site's stored data for the local SoundFlex URL, or remove the `soundflex-control.connection` local-storage entry in browser developer tools.
 - **Meters lag:** keep the mixer tab visible and check network latency to MixBoard. Meter polling pauses in hidden pages and is deliberately bounded so slow replies cannot build an unbounded queue.
 
 ## Interface notes
 
 - The mixer uses the same two-row input ordering as the native panel and proportionally scales its header, output bank, strips, controls, type, and spacing to fit desktop and laptop browser viewports without page scrolling. Very narrow mobile layouts retain an internal horizontal fallback rather than making controls unusably small.
+- Preview controls reuse the native `knob_icon.png` artwork: 17 red level LEDs and a red position dot follow the Java knob's 300° sweep. The existing 0–100% web range interaction, T0–T3 selection, and solo indicator behavior are unchanged.
+- Input and output faders match native SoundFlex's −∞ to +10 dB range (the −60 dB endpoint is mute). Unity gain is 0 dB; +10 dB sends linear gain approximately 3.162. The preview knob remains 0–100%, and RMS meters still reach full scale at 0 dB.
 - Right-click an input T0–T3 assignment button to select that input's displayed meter track, matching the native local meter-selection behavior.
 - The audio-settings button is intentionally visible but disabled.
 - The ClassX and SoundFlex names, interface, and copied SVG artwork are property of ClassX srl — https://www.classx.it.

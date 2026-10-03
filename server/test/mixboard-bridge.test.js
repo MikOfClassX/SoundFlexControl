@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import net from "node:net";
 import test from "node:test";
+import { buildActionCommands } from "../actions.js";
 import { LineFramer } from "../line-framer.js";
 import { MixBoardBridge } from "../mixboard-bridge.js";
 
@@ -93,6 +94,7 @@ test("MixBoardBridge snapshots, executes actions, forwards events, and reconnect
   assert.ok(commands.includes("MBC_SETAUDIOMASTERVOLUMEPERCHANNEL CHANNEL=CH_2 VIDEOINPUTID=3 VOLUME=0.1"));
   assert.ok(!commands.includes("MBC_SETAUDIOMASTERVOLUMEPERCHANNEL CHANNEL=CH_2 VIDEOINPUTID=3 VOLUME=0.2"));
   assert.ok(commands.includes("MBC_SETAUDIOMASTERVOLUMEPERCHANNEL CHANNEL=CH_2 VIDEOINPUTID=3 VOLUME=0.3"));
+  assert.equal(commands.filter((command) => command === "MBC_UPDATESOUNDFLEXGUI").length, 3, "superseded fader action sent a native refresh");
   await waitUntil(() => soundFlexQueries >= 2, 1000);
 
   const reconnected = waitUntil(() => inventoryQueries >= 2, 1500);
@@ -238,17 +240,84 @@ test("native disable settles after fade without waiting for the five-second snap
   assert.ok(mock.queries >= 3, "no post-fade snapshot was taken");
 });
 
+test("each successful web action requests one native refresh after its mutation commands", async (context) => {
+  const mock = await audioMock(context);
+  await mock.connect();
+  assert.ok(!mock.commands.includes("MBC_UPDATESOUNDFLEXGUI"), "initial snapshot requested native refresh");
+  const actions = [
+    ["selectChannel", { channel: "CH_2" }],
+    ["setPreviewTrack", { track: "T2" }],
+    ["setPreviewVolume", { volume: 0.4 }],
+    ["setTrackVolume", { track: "T1", volume: 10 ** (10 / 20) }],
+    ["setAudioEnabled", { channel: "CH_0", videoInputId: 0, enabled: true }],
+    ["setAudioFollowVideo", { channel: "CH_0", videoInputId: 0, enabled: true }],
+    ["setTrackEnabled", { videoInputId: 0, track: "T1", enabled: true }],
+    ["setSoloPreview", { videoInputId: 0, enabled: true }],
+    ["setInputVolume", { channel: "CH_0", videoInputId: 0, volume: 10 ** (10 / 20) }],
+  ];
+  for (const [name, payload] of actions) {
+    const start = mock.commands.length;
+    const expected = buildActionCommands(name, payload, 1);
+    const result = await mock.bridge.executeAction(name, payload);
+    assert.deepEqual(mock.commands.slice(start).filter((command) => !command.startsWith("MBC_GET")), [...expected, "MBC_UPDATESOUNDFLEXGUI"], name);
+    assert.deepEqual(result.results, expected.map(() => "Ok"), "refresh acknowledgement changed mutation results");
+  }
+  const refreshes = mock.commands.filter((command) => command === "MBC_UPDATESOUNDFLEXGUI").length;
+  await mock.bridge.refreshSnapshot();
+  mock.emitAudioEvent();
+  await delay(100);
+  assert.equal(mock.commands.filter((command) => command === "MBC_UPDATESOUNDFLEXGUI").length, refreshes, "read/event reconciliation bounced a refresh request");
+});
+
+test("failed or invalid web mutations do not request a native refresh", async (context) => {
+  const mock = await audioMock(context);
+  await mock.connect();
+  mock.replies["MBC_SETAUDIOPREVIEWCHANNEL CHANNEL=CH_2"] = "Error 1";
+  await assert.rejects(mock.bridge.executeAction("selectChannel", { channel: "CH_2" }), /MBC_SETAUDIOPREVIEWCHANNEL failed/u);
+  await assert.rejects(mock.bridge.executeAction("setInputVolume", { channel: "CH_0", videoInputId: 0, volume: 4 }), /volume/iu);
+  assert.ok(!mock.commands.includes("MBC_UPDATESOUNDFLEXGUI"));
+});
+
+test("native refresh failure is reported without failing an already successful audio mutation", async (context) => {
+  const mock = await audioMock(context);
+  await mock.connect();
+  const errors = [];
+  mock.bridge.on("bridgeError", (error) => errors.push(error));
+  mock.replies.MBC_UPDATESOUNDFLEXGUI = "Error 1";
+  const result = await mock.bridge.executeAction("setTrackVolume", { track: "T0", volume: 0.4 });
+  assert.deepEqual(result.results, ["Ok"]);
+  assert.equal(result.coalesced, false);
+  assert.match(errors[0]?.message, /MBC_UPDATESOUNDFLEXGUI failed: Error 1/u);
+  await waitUntil(() => mock.queries >= 2, 500);
+});
+
+test("web disable requests another native refresh after fade confirmation, not on every settling read", async (context) => {
+  const mock = await audioMock(context);
+  mock.enabled = true;
+  mock.fadeOutMs = 250;
+  await mock.connect();
+  await mock.bridge.executeAction("setAudioEnabled", { channel: "CH_0", videoInputId: 0, enabled: false });
+  assert.equal(mock.commands.filter((command) => command === "MBC_UPDATESOUNDFLEXGUI").length, 1);
+  await waitUntil(() => mock.commands.filter((command) => command === "MBC_UPDATESOUNDFLEXGUI").length === 2, 800);
+  assert.ok(Date.now() >= mock.fadeUntil, "final native refresh was sent while the fade was active");
+  await delay(250);
+  assert.equal(mock.commands.filter((command) => command === "MBC_UPDATESOUNDFLEXGUI").length, 2);
+});
+
 async function audioMock(context) {
   const sockets = new Set();
   const eventSockets = new Set();
-  const mock = { enabled: false, fadeOutMs: 0, fadeUntil: 0, queries: 0, holdNext: false, release: null };
+  const mock = { enabled: false, fadeOutMs: 0, fadeUntil: 0, queries: 0, holdNext: false, release: null, commands: [], replies: {} };
   const commandServer = net.createServer((socket) => {
     sockets.add(socket);
     socket.on("close", () => sockets.delete(socket));
     const framer = new LineFramer();
     socket.on("data", (chunk) => {
       for (const command of framer.push(chunk)) {
-        if (command === "MBC_GETVIDEOINPUTLIST") {
+        mock.commands.push(command);
+        if (Object.hasOwn(mock.replies, command)) {
+          socket.write(`${mock.replies[command]}\n`);
+        } else if (command === "MBC_GETVIDEOINPUTLIST") {
           socket.write(`${encode({ VIDEOINPUT: [], MAX_SUPPORTED_INPUTS: 1 })}\n`);
         } else if (command === "MBC_GETSOUNDFLEXINFO") {
           mock.queries += 1;

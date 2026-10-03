@@ -11,6 +11,7 @@ import type {
 } from "../types";
 import AssetIcon from "./AssetIcon";
 import Fader from "./Fader";
+import PreviewKnob from "./PreviewKnob";
 import VuMeter from "./VuMeter";
 
 const CHANNELS: Channel[] = ["CH_0", "CH_1", "CH_2", "CH_3"];
@@ -104,26 +105,6 @@ function MixerHeader({ snapshot, onAction }: Pick<MixerProps, "snapshot" | "onAc
           );
         })}
       </div>
-    </div>
-  );
-}
-
-function PreviewKnob({ value, onChange }: { value: number; onChange: (value: number) => void }) {
-  const rotation = -135 + Math.max(0, Math.min(1, value)) * 270;
-  return (
-    <div className="preview-knob" title={`Preview volume ${Math.round(value * 100)}%`}>
-      <div className="knob-face" aria-hidden="true">
-        <span style={{ transform: `rotate(${rotation}deg)` }} />
-      </div>
-      <input
-        aria-label="Preview monitor volume"
-        max="1"
-        min="0"
-        onChange={(event) => onChange(Number(event.target.value))}
-        step="0.01"
-        type="range"
-        value={value}
-      />
     </div>
   );
 }
