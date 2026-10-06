@@ -44,7 +44,7 @@ button:focus-visible, input:focus-visible, [tabindex]:focus-visible {
 }
 
 .app-title { display: flex; align-items: center; gap: clamp(5px, .42vw, 16px); font-size: clamp(11px, .68vw, 26px); color: #ddd; white-space: nowrap; }
-.classx-mark { display: grid; place-items: center; width: clamp(20px, 1.15vw, 44px); height: clamp(20px, 1.15vw, 44px); background: #df164c; color: white; font-size: clamp(8px, .47vw, 18px); font-weight: 900; transform: rotate(-12deg); }
+.classx-mark { width: clamp(20px, 1.15vw, 44px); height: clamp(20px, 1.15vw, 44px); object-fit: contain; flex-shrink: 0; }
 .soundflex-logo { width: clamp(110px, 7.55vw, 290px); height: 70%; margin-left: auto; object-fit: contain; }
 
 .connection-toggle, .connection-panel button, .empty-mixer button {

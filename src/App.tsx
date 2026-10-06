@@ -84,7 +84,7 @@ export default function App() {
     <main className="app-shell">
       <header className="app-bar">
         <div className="app-title">
-          <span className="classx-mark">CX</span>
+          <img className="classx-mark" src="/assets/classx_icon.png" alt="ClassX" />
           <span>SoundFlex v1.0 - (C) ClassX 2026</span>
         </div>
         <img alt="SoundFlex" className="soundflex-logo" src="/assets/soundflex_logo.svg" />
