@@ -48,11 +48,18 @@ export default function Fader({ value, label, disabled = false, onChange }: Fade
         min={MIN_DB}
         onBlur={() => setEditing(false)}
         onChange={(event) => update(Number(event.target.value))}
+        onContextMenu={(event) => {
+          event.preventDefault();
+          if (disabled) return;
+          update(0);
+          setEditing(false);
+        }}
         onKeyUp={() => setEditing(false)}
         onPointerDown={() => setEditing(true)}
         onPointerUp={() => setEditing(false)}
         step="0.5"
         type="range"
+        title="Right-click to reset to 0 dB"
         value={linearToDb(draft)}
       />
     </div>

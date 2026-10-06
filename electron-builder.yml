@@ -1,0 +1,31 @@
+appId: it.classx.soundflexcontrol
+productName: ClassX SoundFlexControl
+copyright: Copyright © ClassX srl
+asar: true
+directories:
+  output: release
+files:
+  - desktop/main.js
+  - desktop/classx.ico
+  - dist/**/*
+  - server/*.js
+  - package.json
+win:
+  icon: desktop/classx.ico
+  executableName: ClassX SoundFlexControl
+  target:
+    - target: nsis
+      arch:
+        - x64
+nsis:
+  artifactName: ClassX SoundFlexControl Setup ${version}.${ext}
+  oneClick: false
+  perMachine: false
+  allowElevation: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: ClassX SoundFlexControl
+  installerIcon: desktop/classx.ico
+  uninstallerIcon: desktop/classx.ico
+  deleteAppDataOnUninstall: false

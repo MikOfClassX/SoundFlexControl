@@ -11,7 +11,30 @@ The responsive interface follows the native SoundFlex mixer: preview monitor con
 - Network access from this machine to MixBoard's command and event ports.
 - A current Edge, Firefox, or Chrome browser.
 
-## Windows quick start
+## Windows desktop installer — ClassX SoundFlexControl
+
+On a **Windows x64 build machine** with a current Node.js LTS installation (Node.js 24.18 or newer recommended) and internet access:
+
+1. Double-click `Build ClassX SoundFlexControl Installer.cmd` from the complete project checkout.
+2. The batch installs locked dependencies, runs typechecking and the server/UI tests, builds the interface, and packages the desktop application.
+3. Distribute `release/ClassX SoundFlexControl Setup 0.1.0.exe` (the version follows `package.json`). Do not distribute the source checkout or `node_modules`.
+
+The per-user installer allows choosing the installation directory and creates desktop/Start menu shortcuts. **End users need no Node.js, npm, or separate browser**. Electron bundles the browser/runtime and existing MixBoard bridge. Initial installers are unsigned and may trigger Windows SmartScreen; production code signing requires ClassX signing credentials.
+
+### Desktop operation
+
+- Launch **ClassX SoundFlexControl** from its shortcut. The existing mixer opens in its own window.
+- **Channels → Open CH 0–3 window** opens independent channel windows sharing one MixBoard connection. Existing Ctrl-click channel selection still works.
+- Launching the application again focuses an existing window instead of starting another bridge.
+- Closing the last window or choosing **Application → Exit** stops the bridge and application.
+- Connection settings are saved in the Electron per-user profile (`%APPDATA%/ClassX SoundFlexControl`), independently of browser settings. Uninstalling preserves them.
+- The desktop server listens only on `127.0.0.1:3080`; it does not enable LAN access or use web-launcher host/port overrides. Close an existing browser launcher first: an occupied port produces an error rather than attaching to another server. The bridge still connects to the remote MixBoard host configured in **Connection**.
+
+For desktop development, run `npm run build` then `npm run start:desktop`. Manual installer build: `npm ci`, `npm run typecheck`, `npm test`, `npm run build:installer`. The official ClassX PNG is used for the window icon; `desktop/classx.ico` is the same artwork enlarged with preserved aspect ratio on a transparent square for Windows installer/executable branding.
+
+Installer installation and interactive Windows acceptance checks are a separate validation stage; see `agent/desktop_installer/STATUS.md` for current validation results.
+
+## Windows quick start (browser application)
 
 1. Double-click `Setup SoundFlex Control.cmd`. This explicitly installs the locked npm dependencies and creates the production build.
 2. Double-click `Start SoundFlex Control.cmd`.
@@ -141,6 +164,7 @@ The production application was launched and DOM-rendered successfully with the i
 - The mixer uses the same two-row input ordering as the native panel and proportionally scales its header, output bank, strips, controls, type, and spacing to fit desktop and laptop browser viewports without page scrolling. Very narrow mobile layouts retain an internal horizontal fallback rather than making controls unusably small.
 - Preview controls reuse the native `knob_icon.png` artwork: 17 red level LEDs and a red position dot follow the Java knob's 300° sweep. The existing 0–100% web range interaction, T0–T3 selection, and solo indicator behavior are unchanged.
 - Input and output faders match native SoundFlex's −∞ to +10 dB range (the −60 dB endpoint is mute). Unity gain is 0 dB; +10 dB sends linear gain approximately 3.162. The preview knob remains 0–100%, and RMS meters still reach full scale at 0 dB.
+- Right-click an enabled input or output fader to reset it to **0 dB (unity gain)**, not mute. The preview knob is unchanged.
 - Right-click an input T0–T3 assignment button to select that input's displayed meter track, matching the native local meter-selection behavior.
 - The audio-settings button is intentionally visible but disabled.
 - The ClassX and SoundFlex names, interface, and copied SVG artwork are property of ClassX srl — https://www.classx.it.
