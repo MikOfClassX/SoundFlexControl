@@ -1,8 +1,10 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import { loadSettings, saveSettings, SoundFlexApi } from "./api";
 import Mixer from "./components/Mixer";
+import { readWindowChannel, saveWindowChannel } from "./channel";
 import type {
+  Channel,
   ConnectionSettings,
   ConnectionStatus,
   ServerMessage,
@@ -18,6 +20,8 @@ export default function App() {
   const [status, setStatus] = useState<ConnectionStatus>("disconnected");
   const [snapshot, setSnapshot] = useState<SoundFlexSnapshot | null>(null);
   const [meters, setMeters] = useState<SoundFlexMeters | null>(null);
+  const [selectedChannel, setSelectedChannel] = useState<Channel>(() => readWindowChannel());
+  const channelRef = useRef(selectedChannel);
   const [error, setError] = useState("");
   const [bridgeReady, setBridgeReady] = useState(false);
   const [showConnection, setShowConnection] = useState(true);
@@ -28,28 +32,42 @@ export default function App() {
         const payload = message.payload as { status: ConnectionStatus };
         setStatus(payload.status);
         if (payload.status === "connected") setShowConnection(false);
+        else setMeters(null);
       } else if (message.type === "snapshot" || message.type === "state") {
         setSnapshot(message.payload as SoundFlexSnapshot);
       } else if (message.type === "meters") {
         const nextMeters = message.payload as SoundFlexMeters;
-        setMeters((current) => !current || nextMeters.sequence > current.sequence ? nextMeters : current);
+        if (nextMeters.channel === channelRef.current) {
+          setMeters((current) => !current || nextMeters.sequence > current.sequence ? nextMeters : current);
+        }
       } else if (message.type === "error" && !message.requestId) {
         const payload = message.payload as { message?: string };
         setError(payload.message || "MixBoard bridge error");
       }
     });
 
-    const updateMeterActivity = () => api.setMetersActive(document.visibilityState === "visible");
-    document.addEventListener("visibilitychange", updateMeterActivity);
-    updateMeterActivity();
     api.open().then(() => setBridgeReady(true)).catch((reason: Error) => setError(reason.message));
     return () => {
-      document.removeEventListener("visibilitychange", updateMeterActivity);
-      api.setMetersActive(false);
+      api.setMetersActive(false, channelRef.current);
       unsubscribe();
       api.close();
     };
   }, [api]);
+
+  useEffect(() => {
+    const updateMeterActivity = () => api.setMetersActive(document.visibilityState === "visible", selectedChannel);
+    document.addEventListener("visibilitychange", updateMeterActivity);
+    updateMeterActivity();
+    return () => document.removeEventListener("visibilitychange", updateMeterActivity);
+  }, [api, selectedChannel]);
+
+  const selectWindowChannel = (channel: Channel) => {
+    if (channel === channelRef.current) return;
+    channelRef.current = channel;
+    setMeters(null);
+    setSelectedChannel(channel);
+    saveWindowChannel(channel);
+  };
 
   const connect = async (event: FormEvent) => {
     event.preventDefault();
@@ -113,7 +131,7 @@ export default function App() {
       )}
 
       {snapshot ? (
-        <Mixer meters={meters} onAction={performAction} snapshot={snapshot} />
+        <Mixer meters={meters} onAction={performAction} onChannelChange={selectWindowChannel} selectedChannel={selectedChannel} snapshot={snapshot} />
       ) : (
         <section className="empty-mixer" aria-live="polite">
           <img alt="SoundFlex" src="/assets/soundflex_logo.svg" />

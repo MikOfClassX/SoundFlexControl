@@ -13,20 +13,22 @@ function clamp(minimum: number, preferred: number, maximum: number) {
 
 function referenceLayout(width: number, height: number, inputCount = 24) {
   const shellPadding = clamp(2, width * 0.0016, 6) * 2;
-  const outputWidth = clamp(128, width * 0.085, 326);
+  const unit = Math.min(width / 3840, height / 2160);
+  const outputWidth = Math.max(100, 326 * unit);
   const separator = clamp(6, width * 0.0057, 22) + clamp(2, width * 0.0026, 10) * 2;
-  const gap = clamp(3, width * 0.0026, 10);
+  const gap = Math.max(3, 10 * unit);
   const columns = Math.ceil(inputCount / 2);
   const inputAreaWidth = width - shellPadding - outputWidth - separator;
   const stripWidth = (inputAreaWidth - gap * (columns - 1)) / columns;
-  const appBarHeight = clamp(34, height * 0.028, 60);
-  const mixerHeaderHeight = clamp(56, height * 0.064, 138);
+  const appBarHeight = Math.max(34, 60 * unit);
+  const mixerHeaderHeight = Math.max(56, 138 * unit);
   const bodyHeight = height - appBarHeight - mixerHeaderHeight - shellPadding - 1 - gap;
 
   return { appBarHeight, bodyHeight, inputAreaWidth, mixerHeaderHeight, outputWidth, stripWidth };
 }
 
-describe("viewport layout contract", () => {
+// Reference geometry budget; test:layout separately measures the rendered DOM in Edge.
+describe("viewport layout budget", () => {
   it.each(DESKTOP_VIEWPORTS)("keeps the complete 24-input mixer inside %ix%i", (width, height) => {
     const layout = referenceLayout(width, height);
 

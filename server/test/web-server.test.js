@@ -38,7 +38,7 @@ test("web server exposes typed connect and action requests over WebSocket", asyn
   bridge.emit("state", bridge.snapshot);
   assert.equal((await stateBroadcast).payload.videoInputs.MAX_SUPPORTED_INPUTS, 2);
 
-  socket.send(JSON.stringify({ type: "meters.subscription", payload: { active: true } }));
+  socket.send(JSON.stringify({ type: "meters.subscription", payload: { active: true, channel: "CH_0" } }));
   await waitUntil(() => bridge.meterActive);
   const meterBroadcast = waitForType(socket, "meters");
   bridge.emit("meters", { channel: "CH_0", videoInputs: [], outputTracks: [], sequence: 1 });
@@ -61,7 +61,7 @@ test("web server shares meter demand, scopes broadcasts, and serves the cached s
   });
 
   const firstCached = waitForType(first, "meters");
-  first.send(JSON.stringify({ type: "meters.subscription", payload: { active: true } }));
+  first.send(JSON.stringify({ type: "meters.subscription", payload: { active: true, channel: "CH_0" } }));
   assert.equal((await firstCached).payload.sequence, 7);
   await waitUntil(() => bridge.meterActive);
 
@@ -72,15 +72,61 @@ test("web server shares meter demand, scopes broadcasts, and serves the cached s
   await secondLive;
 
   const secondCached = waitForType(second, "meters");
-  second.send(JSON.stringify({ type: "meters.subscription", payload: { active: true } }));
+  second.send(JSON.stringify({ type: "meters.subscription", payload: { active: true, channel: "CH_0" } }));
   assert.equal((await secondCached).payload.sequence, 7);
   assert.equal(bridge.meterActiveChanges.filter(Boolean).length, 1, "a second viewer started another meter stream");
 
-  first.send(JSON.stringify({ type: "meters.subscription", payload: { active: false } }));
+  first.send(JSON.stringify({ type: "meters.subscription", payload: { active: false, channel: "CH_0" } }));
   await new Promise((resolve) => setTimeout(resolve, 20));
   assert.equal(bridge.meterActive, true);
-  second.send(JSON.stringify({ type: "meters.subscription", payload: { active: false } }));
+  second.send(JSON.stringify({ type: "meters.subscription", payload: { active: false, channel: "CH_0" } }));
   await waitUntil(() => !bridge.meterActive);
+});
+
+test("different windows receive only their channel and can switch or suspend independently", async (context) => {
+  const bridge = new FakeBridge();
+  const application = createWebServer({ bridge });
+  await new Promise(resolve => application.server.listen(0, "127.0.0.1", resolve));
+  context.after(() => application.close());
+  const url = `ws://127.0.0.1:${application.server.address().port}/ws`;
+  const first = await openSocket(url);
+  const second = await openSocket(url);
+  context.after(() => { first.close(); second.close(); });
+  async function subscribe(socket, id, payload) {
+    const result = waitForRequest(socket, id);
+    socket.send(JSON.stringify({ type: "meters.subscription", requestId: id, payload }));
+    return result;
+  }
+  await subscribe(first, "first", { active: true, channel: "CH_0" });
+  await subscribe(second, "second", { active: true, channel: "CH_2" });
+  assert.deepEqual([...bridge.meterChannels].sort(), ["CH_0", "CH_2"]);
+  const firstSample = waitForType(first, "meters");
+  const noSecondSample = expectNoType(second, "meters", 50);
+  bridge.emit("meters", { channel: "CH_0", sequence: 1 });
+  assert.equal((await firstSample).payload.channel, "CH_0");
+  await noSecondSample;
+  const secondSample = waitForType(second, "meters");
+  const noFirstSample = expectNoType(first, "meters", 50);
+  bridge.emit("meters", { channel: "CH_2", sequence: 1 });
+  assert.equal((await secondSample).payload.channel, "CH_2");
+  await noFirstSample;
+
+  await assert.rejects(subscribe(first, "invalid", { active: true, channel: "CH_9" }), /Invalid channel/u);
+  await assert.rejects(subscribe(first, "missing", { active: true }), /Invalid channel/u);
+  await assert.rejects(subscribe(first, "boolean", { active: "true", channel: "CH_1" }), /Boolean/u);
+  assert.deepEqual([...bridge.meterChannels].sort(), ["CH_0", "CH_2"]);
+  await subscribe(first, "switch", { active: true, channel: "CH_2" });
+  assert.deepEqual(bridge.meterChannels, ["CH_2"]);
+  const neitherOld = Promise.all([expectNoType(first, "meters", 50), expectNoType(second, "meters", 50)]);
+  bridge.emit("meters", { channel: "CH_0", sequence: 2 });
+  await neitherOld;
+  const bothNew = [waitForType(first, "meters"), waitForType(second, "meters")];
+  bridge.emit("meters", { channel: "CH_2", sequence: 2 });
+  assert.deepEqual((await Promise.all(bothNew)).map(message => message.payload.channel), ["CH_2", "CH_2"]);
+  await subscribe(first, "hidden", { active: false, channel: "CH_2" });
+  assert.deepEqual(bridge.meterChannels, ["CH_2"]);
+  second.close();
+  await waitUntil(() => bridge.meterChannels.length === 0);
 });
 
 class FakeBridge extends EventEmitter {
@@ -92,7 +138,15 @@ class FakeBridge extends EventEmitter {
   meterActive = false;
   meterActiveChanges = [];
 
-  setMeterActive(active) {
+  meterChannels = [];
+
+  getCachedMeters(channel) {
+    return this.latestMeters?.channel === channel ? this.latestMeters : null;
+  }
+
+  setMeterChannels(channels) {
+    this.meterChannels = channels;
+    const active = channels.length > 0;
     if (active === this.meterActive) return;
     this.meterActive = active;
     this.meterActiveChanges.push(active);

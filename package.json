@@ -11,6 +11,7 @@
     "test": "npm run test:server && npm run test:ui",
     "test:server": "node --test server/test/*.test.js",
     "test:ui": "vitest run",
+    "test:layout": "node src/test/viewport-browser.mjs",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

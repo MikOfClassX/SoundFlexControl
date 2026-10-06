@@ -72,7 +72,6 @@ export interface ServerMessage {
 }
 
 export type SoundFlexAction =
-  | { name: "selectChannel"; payload: { channel: Channel } }
   | { name: "setPreviewTrack"; payload: { track: AudioTrack } }
   | { name: "setPreviewVolume"; payload: { volume: number } }
   | { name: "setTrackVolume"; payload: { track: AudioTrack; volume: number } }

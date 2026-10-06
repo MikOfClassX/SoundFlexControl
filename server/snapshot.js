@@ -21,16 +21,15 @@ export async function readSoundFlex(commandClient) {
   return queryJson(commandClient, "MBC_GETSOUNDFLEXINFO");
 }
 
-export async function readMeters(commandClient, channel, sequence) {
+export async function readMeters(commandClient, channels, sequence) {
+  // Source RMS is shared; only output RMS requires one query per distinct bus.
   const videoInputs = await queryJson(commandClient, "MBC_GETVIDEOINPUTRMS");
-  const outputTracks = await queryJson(commandClient, `MBC_GETAUDIOTRACKRMS CHANNEL=${channel}`);
-  return {
-    channel,
-    videoInputs,
-    outputTracks,
-    sequence,
-    receivedAt: new Date().toISOString(),
-  };
+  const samples = [];
+  for (const channel of channels) {
+    const outputTracks = await queryJson(commandClient, `MBC_GETAUDIOTRACKRMS CHANNEL=${channel}`);
+    samples.push({ channel, videoInputs, outputTracks, sequence, receivedAt: new Date().toISOString() });
+  }
+  return samples;
 }
 
 export async function queryJson(commandClient, command) {

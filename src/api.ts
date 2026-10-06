@@ -1,4 +1,4 @@
-import type { ConnectionSettings, ServerMessage, SoundFlexAction } from "./types";
+import type { Channel, ConnectionSettings, ServerMessage, SoundFlexAction } from "./types";
 
 export const SETTINGS_STORAGE_KEY = "soundflex-control.connection";
 export const DEFAULT_SETTINGS: ConnectionSettings = {
@@ -14,6 +14,7 @@ export class SoundFlexApi {
   private listeners = new Set<MessageListener>();
   private pending = new Map<string, { resolve: (value: unknown) => void; reject: (error: Error) => void }>();
   private metersActive = false;
+  private meterChannel: Channel = "CH_0";
 
   open(): Promise<void> {
     if (this.socket?.readyState === WebSocket.OPEN) return Promise.resolve();
@@ -62,14 +63,15 @@ export class SoundFlexApi {
     return this.request("action", action);
   }
 
-  setMetersActive(active: boolean): void {
+  setMetersActive(active: boolean, channel: Channel): void {
     this.metersActive = active;
+    this.meterChannel = channel;
     this.sendMeterSubscription();
   }
 
   private sendMeterSubscription(): void {
     if (this.socket?.readyState === WebSocket.OPEN) {
-      this.socket.send(JSON.stringify({ type: "meters.subscription", payload: { active: this.metersActive } }));
+      this.socket.send(JSON.stringify({ type: "meters.subscription", payload: { active: this.metersActive, channel: this.meterChannel } }));
     }
   }
 

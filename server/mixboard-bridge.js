@@ -4,7 +4,7 @@ import { parseEventRecord, reduceEvent } from "./event-state.js";
 import { MbCommandClient } from "./mb-command-client.js";
 import { MbEventClient } from "./mb-event-client.js";
 import { readMeters, readSnapshot, readSoundFlex } from "./snapshot.js";
-import { CHANNELS, validateSettings } from "./validation.js";
+import { CHANNELS, validateChannel, validateSettings } from "./validation.js";
 
 const COALESCED_ACTIONS = new Set(["setPreviewVolume", "setTrackVolume", "setInputVolume"]);
 
@@ -27,9 +27,9 @@ export class MixBoardBridge extends EventEmitter {
   #status = "disconnected";
   #meterTimer = null;
   #meterInFlight = false;
-  #meterActive = false;
+  #meterChannels = new Set();
   #meterSequence = 0;
-  #latestMeters = null;
+  #latestMeters = new Map();
   #periodicReconcileTimer = null;
   #reconcileTimer = null;
   #pendingReconcile = null;
@@ -70,15 +70,18 @@ export class MixBoardBridge extends EventEmitter {
     return this.#status;
   }
 
-  get latestMeters() {
-    return this.#status === "connected" ? this.#latestMeters : null;
+  getCachedMeters(channel) {
+    validateChannel(channel);
+    return this.#status === "connected" ? this.#latestMeters.get(channel) ?? null : null;
   }
 
-  setMeterActive(active) {
-    if (typeof active !== "boolean") throw new TypeError("Meter activity must be a Boolean");
-    if (active === this.#meterActive) return;
-    this.#meterActive = active;
-    if (active) {
+  setMeterChannels(channels) {
+    const next = new Set(channels.map(validateChannel));
+    for (const channel of this.#meterChannels) {
+      if (!next.has(channel)) this.#latestMeters.delete(channel);
+    }
+    this.#meterChannels = next;
+    if (next.size > 0) {
       this.#scheduleMeterPoll(0);
     } else {
       clearTimeout(this.#meterTimer);
@@ -111,7 +114,7 @@ export class MixBoardBridge extends EventEmitter {
     this.#eventsDuringRefresh = [];
     this.#cancelPendingActions();
     this.#snapshot = null;
-    this.#latestMeters = null;
+    this.#latestMeters.clear();
     this.#emitStatus("disconnected");
   }
 
@@ -188,7 +191,7 @@ export class MixBoardBridge extends EventEmitter {
     const onClose = ({ intentional }) => {
       if (!intentional && this.#desired && generation === this.#generation) {
         this.#stopCoordination();
-        this.#latestMeters = null;
+        this.#latestMeters.clear();
         commandClient.close();
         eventClient.close();
         this.#emitStatus("reconnecting");
@@ -346,7 +349,7 @@ export class MixBoardBridge extends EventEmitter {
   }
 
   #scheduleMeterPoll(delay = this.#meterIntervalMs) {
-    if (!this.#meterActive || this.#meterIntervalMs <= 0 || this.#meterTimer || this.#meterInFlight || !this.#desired || !this.#commandClient?.connected) return;
+    if (this.#meterChannels.size === 0 || this.#meterIntervalMs <= 0 || this.#meterTimer || this.#meterInFlight || !this.#desired || !this.#commandClient?.connected) return;
     const generation = this.#generation;
     this.#meterTimer = setTimeout(() => {
       this.#meterTimer = null;
@@ -356,12 +359,8 @@ export class MixBoardBridge extends EventEmitter {
   }
 
   async #pollMeters(generation) {
-    if (this.#meterInFlight || !this.#meterActive || !this.#desired || generation !== this.#generation || !this.#commandClient?.connected) return;
-    const channel = this.#snapshot?.soundFlex?.CURRENT_CHANNEL;
-    if (!CHANNELS.includes(channel)) {
-      this.#scheduleMeterPoll();
-      return;
-    }
+    if (this.#meterInFlight || this.#meterChannels.size === 0 || !this.#desired || generation !== this.#generation || !this.#commandClient?.connected) return;
+    const channels = CHANNELS.filter(channel => this.#meterChannels.has(channel));
 
     // State changes take precedence over starting another background meter cycle.
     if (this.#pendingReconcile || this.#refreshOperation) {
@@ -373,11 +372,14 @@ export class MixBoardBridge extends EventEmitter {
     const commandClient = this.#commandClient;
     const sequence = ++this.#meterSequence;
     try {
-      const meters = await readMeters(commandClient, channel, sequence);
-      if (this.#meterActive && this.#desired && generation === this.#generation && commandClient === this.#commandClient && channel === this.#snapshot?.soundFlex?.CURRENT_CHANNEL) {
-        if (!sameMeterValues(this.#latestMeters, meters)) {
-          this.#latestMeters = meters;
-          this.emit("meters", meters);
+      const samples = await readMeters(commandClient, channels, sequence);
+      if (this.#desired && generation === this.#generation && commandClient === this.#commandClient) {
+        for (const meters of samples) {
+          if (!this.#meterChannels.has(meters.channel)) continue;
+          if (!sameMeterValues(this.#latestMeters.get(meters.channel), meters)) {
+            this.#latestMeters.set(meters.channel, meters);
+            this.emit("meters", meters);
+          }
         }
       }
     } catch (error) {

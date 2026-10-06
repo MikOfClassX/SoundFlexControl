@@ -7,6 +7,18 @@ import Fader from "./Fader";
 afterEach(cleanup);
 
 describe("native-compatible fader range", () => {
+  it("positions major and minor ticks by their dB value", () => {
+    const { container } = render(<Fader label="Output volume" value={1} onChange={() => undefined} />);
+    const ticks = [...container.querySelectorAll<HTMLElement>(".fader-tick")];
+    expect(ticks).toHaveLength(36);
+    expect(ticks.filter(tick => tick.classList.contains("major"))).toHaveLength(8);
+    for (const tick of ticks) {
+      const db = Number(tick.dataset.db);
+      expect(parseFloat(tick.style.top)).toBeCloseTo((10 - db) / 70 * 100);
+    }
+    expect(ticks[0].textContent).toBe("+10");
+    expect(ticks.at(-1)?.textContent).toBe("−∞");
+  });
   it("displays unity below the +10 dB maximum and sends linear boost", () => {
     const onChange = vi.fn();
     render(<Fader label="Output volume" value={1} onChange={onChange} />);

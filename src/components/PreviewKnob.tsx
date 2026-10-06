@@ -1,3 +1,5 @@
+import type { Channel } from "../types";
+
 // Match AudioVolumeKnobPanel's 60px geometry without changing the web range control.
 const TICK_COUNT = 17;
 const MIN_ANGLE = 120;
@@ -8,11 +10,11 @@ function position(ratio: number, radius: number) {
   return { x: 30 + radius * Math.cos(angle), y: 30 + radius * Math.sin(angle) };
 }
 
-export default function PreviewKnob({ value, onChange }: { value: number; onChange: (value: number) => void }) {
+export default function PreviewKnob({ value, onChange, monitorChannel }: { value: number; onChange: (value: number) => void; monitorChannel?: Channel }) {
   const ratio = Math.max(0, Math.min(1, value));
   const dot = position(ratio, 12);
   return (
-    <div className="preview-knob" title={`Preview volume ${Math.round(value * 100)}%`}>
+    <div className="preview-knob" title={`${monitorChannel ? `Global preview monitor: ${monitorChannel}; ` : ""}Preview volume ${Math.round(value * 100)}%`}>
       <svg className="knob-face" viewBox="0 0 60 60" aria-hidden="true" focusable="false">
         <image href="/assets/knob_icon.png" x="10" y="10" width="40" height="40" />
         {Array.from({ length: TICK_COUNT }, (_, index) => {
@@ -25,6 +27,7 @@ export default function PreviewKnob({ value, onChange }: { value: number; onChan
       </svg>
       <input
         aria-label="Preview monitor volume"
+        aria-description={monitorChannel ? `Global preview channel ${monitorChannel}; independent of this window's output channel` : undefined}
         max="1"
         min="0"
         onChange={(event) => onChange(Number(event.target.value))}

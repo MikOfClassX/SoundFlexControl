@@ -59,6 +59,8 @@ npm run build
 
 The tests include local mock TCP command/event servers and focused React interaction tests; they do not require a running MixBoard instance.
 
+On Windows, run `npm run test:layout` for actual Edge DOM-bound checks at 3840×2160, 1920×1080, 1366×768, 1280×720, 1024×600, and 900×700, each with 2, 16, and 24 inputs. The runner starts an isolated Vite server on port 5179 and a temporary headless Edge profile with debugging port 9239; keep those ports free. No extra packages are required. Set `SOUNDFLEX_EDGE_PATH` if Edge is installed elsewhere. Optional `SOUNDFLEX_SCREENSHOTS` (absolute output directory) saves Edge captures; also setting `SOUNDFLEX_FIREFOX_PATH` captures the same fixtures in Firefox. Firefox captures are visual checks, not automated DOM-bound assertions.
+
 ## MixBoard configuration
 
 Open **Connection** in the application header and enter:
@@ -68,6 +70,21 @@ Open **Connection** in the application header and enter:
 - **Event port:** MBControl's event TCP port, default `801`.
 
 Select **Connect**. The browser stores these values locally under `soundflex-control.connection`; no credentials are stored. The Node bridge, not the browser, opens both TCP connections to the configured remote host.
+
+## Multiple windows, independent channels
+
+Open one URL per window (or tab):
+
+- `http://127.0.0.1:3080/?channel=CH_0`
+- `http://127.0.0.1:3080/?channel=CH_1`
+- `http://127.0.0.1:3080/?channel=CH_2`
+- `http://127.0.0.1:3080/?channel=CH_3`
+
+Replace the host/port with your controller address when connecting over the local network. Start only one Node bridge; all windows reuse it. Missing or invalid channel parameters default to `CH_0`.
+
+**Ctrl-click** switches only the current window and updates its URL, so refresh restores its channel. Native channel changes do not move these local selections. Audio enable, AFV, input-strip gain, program/preview colors and output meters follow each window's own channel.
+
+Output T0–T3 gains, input track assignments, solo, preview track/volume and the MixBoard connection remain shared. Connect/Disconnect affects every window. The preview monitor listens to MixBoard's global preview channel, identified in the knob area's tooltip; opening a window or changing its local channel does not change that listening channel. Change the global preview channel in native MixBoard when needed.
 
 ## Connection behavior
 
@@ -84,9 +101,9 @@ The bridge:
 - immediately displays successfully confirmed web enable/disable commands and briefly rechecks SoundFlex state after enable changes to follow native audio fades; snapshots keep `AUDIO_ENABLED` true during fade-out (500 ms by default, up to 2 seconds), so settling checks run 100 ms after each completed refresh for at most 2.5 seconds after a change;
 - rebuilds the complete state every five seconds and after reconnecting;
 - uses one shared, demand-driven meter stream for every browser client, polling only while at least one visible page is subscribed;
-- polls input and selected-channel output RMS at most every 150 ms, starts the next cycle only after both replies complete, and suppresses unchanged browser updates;
+- reads input RMS once and output RMS once per distinct visible window channel in each shared cycle; starts the next cycle 150 ms after all replies complete and suppresses unchanged per-channel browser updates;
 - coalesces queued fader updates so only the latest unsent value for each control is transmitted;
-- sends parameterless `MBC_UPDATESOUNDFLEXGUI` after all mutation commands for a web action return `Ok`, including channel selection; superseded fader actions and failed/invalid actions do not send it;
+- sends parameterless `MBC_UPDATESOUNDFLEXGUI` after all mutation commands for a web action return `Ok`; local window-channel selection sends no mutation or native refresh; superseded fader actions and failed/invalid actions do not send it;
 - sends another native GUI refresh when a web disable's real SoundFlex state confirms fade completion; ordinary snapshots, meter reads, and native events do not themselves request native refreshes;
 - reports native GUI refresh failures separately without treating already successful audio mutations as failures; the refresh acknowledgement does not mean the native Swing timer has rendered yet;
 - validates and exposes only the SoundFlex actions required by this project;
@@ -98,13 +115,13 @@ No authentication or TLS is provided. Keep the web server loopback-only unless i
 
 Previously the bridge continuously started a meter cycle every 100 ms whenever MixBoard was connected: up to 10 cycles/second, 20 MBControl queries/second, and two Base64 JSON replies per cycle even with no browser viewing the mixer. Slow replies did not overlap, but polling resumed at the next timer tick.
 
-The bridge now runs a single stream shared by all browser clients. A visible page subscribes through the WebSocket; hidden pages suspend their subscription, and polling stops when the last active page suspends or disconnects. Each cycle contains exactly one `MBC_GETVIDEOINPUTRMS` query and one selected-channel `MBC_GETAUDIOTRACKRMS` query. The next cycle is scheduled 150 ms after both replies complete, so the maximum is about 6.7 cycles/second or 13.3 queries/second under ideal latency, independent of browser count. Idle and fully hidden usage generates no RMS queries. Identical samples remain cached but are not repeatedly sent to browsers.
+The bridge now runs a single stream shared by all browser clients. A visible page subscribes through the WebSocket; hidden pages suspend their subscription, and polling stops when the last active page suspends or disconnects. Each cycle contains exactly one `MBC_GETVIDEOINPUTRMS` query and one `MBC_GETAUDIOTRACKRMS` query per distinct active channel. The next cycle is scheduled 150 ms after all replies complete: at most about 6.7 cycles/second under ideal latency. One channel uses up to 13.3 queries/second; all four channels use up to 33.3 queries/second. Extra windows on the same channel add no queries. Samples are cached and delivered only to visible subscribers of the matching channel. Idle and fully hidden usage generates no RMS queries. Identical samples remain cached but are not repeatedly sent to browsers.
 
 The exact response byte count depends on the configured VideoInput count and JSON number formatting. No live MixBoard was available to record a representative production payload; automated mock tests verify subscription lifecycle, sharing, backpressure, reconnect behavior, unchanged-sample suppression, and query-rate bounds.
 
 ## Browser compatibility
 
-The production application was launched and DOM-rendered successfully with the installed current Microsoft Edge during final validation. The production build also rendered successfully in headless Firefox at 1280×800 using `C:\Program Files (x86)\Mozilla Firefox\firefox.exe`. The layout has explicit automated contracts for 3840×2160, 1920×1080, 1366×768, and 1280×720 browser viewports. The application uses standard React, WebSocket, CSS Grid, CSS container queries and units, SVG mask, range-input, Page Visibility, and `localStorage` APIs supported by current Edge, Firefox, and Chrome. Chrome was not installed on the validation workstation, so its runtime check remains an environment-dependent deployment check.
+The production application was launched and DOM-rendered successfully with the installed current Microsoft Edge during final validation. The production build also rendered successfully in headless Firefox at 1280×800 using `C:\Program Files (x86)\Mozilla Firefox\firefox.exe`. The viewport fixture passed all 18 actual Edge layout checks (six resolutions × three input counts); screenshot comparisons were also performed in Edge and Firefox, including the 3840×2160 reference and laptop sizes. Reference output-bank and input-strip width ratios are checked within 1.2 and 0.8 percentage points respectively at the four desktop/laptop target resolutions. The application uses standard React, WebSocket, CSS Grid, CSS container queries and units, SVG mask, range-input, Page Visibility, and `localStorage` APIs supported by current Edge, Firefox, and Chrome. Chrome was not installed on the validation workstation, so its runtime check remains an environment-dependent deployment check.
 
 ## Troubleshooting
 
@@ -120,6 +137,7 @@ The production application was launched and DOM-rendered successfully with the i
 
 ## Interface notes
 
+- Output-channel selection requires **Ctrl-click** on a channel button and changes only the current window; a normal click does not change channel.
 - The mixer uses the same two-row input ordering as the native panel and proportionally scales its header, output bank, strips, controls, type, and spacing to fit desktop and laptop browser viewports without page scrolling. Very narrow mobile layouts retain an internal horizontal fallback rather than making controls unusably small.
 - Preview controls reuse the native `knob_icon.png` artwork: 17 red level LEDs and a red position dot follow the Java knob's 300° sweep. The existing 0–100% web range interaction, T0–T3 selection, and solo indicator behavior are unchanged.
 - Input and output faders match native SoundFlex's −∞ to +10 dB range (the −60 dB endpoint is mute). Unity gain is 0 dB; +10 dB sends linear gain approximately 3.162. The preview knob remains 0–100%, and RMS meters still reach full scale at 0 dB.

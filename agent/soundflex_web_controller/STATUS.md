@@ -2,21 +2,21 @@
 
 ## Overall status
 
-`PLANNED`
+`READY_FOR_REVIEW`
 
-Tasks 0–6 are complete and approved. Task 7 has been added and is awaiting implementation. Live MixBoard validation remains unavailable.
+Tasks 0–6 are complete and approved. Tasks 7 and 8 are ready for review. Task 8 supports independent local channels per browser window with channel-scoped shared meters. Live MixBoard validation awaits connection details.
 
 ## Current task
 
-### Task 7 — Fit and proportion the GUI to the browser viewport
+### Task 8 — Independent output channel per browser window
 
-- **State:** `PLANNED`
-- **Objective:** Make the complete SoundFlex web GUI fit within the available browser area while closely preserving the proportions, relative control sizes, spacing, and overall composition shown in `soundflex.png`.
-- **Exit criterion:** At 100% browser zoom, the complete mixer fits inside each agreed test viewport without page-level scrolling or clipped controls, and measured section/control proportions closely match `soundflex.png` while all controls remain usable.
+- **State:** `READY_FOR_REVIEW`
+- **Objective:** Give each browser window a local channel selected by URL and Ctrl-click, with correctly scoped controls/meters and unchanged global preview monitoring.
+- **Exit criterion:** Concurrent windows retain independent channels through clicks, native events and reload; channel-scoped controls and meter fan-out are correct; demand-driven polling is shared and bounded; tests, layout checks and build pass.
 
 ## Next task
 
-Task 7 — Fit and proportion the GUI to the browser viewport.
+Human review of Task 8. Live MixBoard validation can follow once the host/IP and command/event ports are supplied; no subsequent implementation task is planned.
 
 ## Task checklist
 
@@ -29,7 +29,8 @@ Task 7 — Fit and proportion the GUI to the browser viewport.
 | 4 | Native-like React GUI | `APPROVED` |
 | 5 | Launcher, browser validation, and handoff | `APPROVED` |
 | 6 | Minimize RMS VU-meter protocol traffic | `APPROVED` |
-| 7 | Fit and proportion the GUI to the browser viewport | `PLANNED` |
+| 7 | Fit and proportion the GUI to the browser viewport | `READY_FOR_REVIEW` |
+| 8 | Independent output channel per browser window | `READY_FOR_REVIEW` |
 
 ## Approved tasks
 
@@ -41,13 +42,15 @@ Task 7 — Fit and proportion the GUI to the browser viewport.
 - Task 5 — Launcher, browser validation, and handoff
 - Task 6 — Minimize RMS VU-meter protocol traffic
 
-## Planned tasks
+## Tasks awaiting review
 
 - Task 7 — Fit and proportion the GUI to the browser viewport
 
+- Task 8 — Independent output channel per browser window
+
 ## Blockers
 
-- Live validation against MixBoard requires a reachable instance; none is currently available.
+- Live validation awaits the user's running MixBoard host/IP and command/event ports.
 - Chrome is not installed on this workstation. Current Edge and Firefox validation passed; Chrome runtime checks could not be performed.
 
 ## Deferred work
@@ -68,6 +71,11 @@ Task 7 — Fit and proportion the GUI to the browser viewport.
 - Task 5 and the completed implementation were approved.
 - Task 6 and the RMS traffic optimization implementation were approved.
 - Task 7 was requested to make the GUI fit the browser area and reflect the proportions and sizes of `soundflex.png`.
+- Task 7 implementation was authorized; the user offered to run MixBoard.
+- Review feedback requested native-like slider tick alignment; the clipboard image was not attached to the conversation.
+- The user acknowledged the tick correction and requested that output-channel buttons change channel only on Ctrl-click.
+- The user requested independent channels in simultaneous windows and accepted the proposed URL/local-selection approach; Task 8's detailed plan was prepared before changing the previously approved global-selection/meter architecture.
+- The user explicitly approved Task 8's detailed plan and authorized implementation.
 
 - Use a Node.js backend and React frontend.
 - Allow operation from a controller machine separate from MixBoard.
@@ -165,9 +173,75 @@ Task 7 — Fit and proportion the GUI to the browser viewport.
 - Launched the production application in Firefox from `C:\Program Files (x86)\Mozilla Firefox\firefox.exe` at 1280×800 and confirmed the rendered connection UI.
 - A live MixBoard instance was unavailable, so production RMS payload size and visual meter cadence could not be measured against hardware.
 
-## Files changed by the current task
+### Task 7 validation
 
-- `agent/soundflex_web_controller/PLAN.md`
+- Recorded reference-region measurements and browser-specific exceptions in `ext_docs/VIEWPORT_REFERENCE.md`.
+- Introduced one width/height-constrained reference unit for major control sizing, with laptop readability floors.
+- Scaled fader thumbs and native input hit areas together; capped input meter/fader/control-column widths to avoid inflated controls with fewer inputs.
+- Added a dependency-free Windows Edge DOM-bound runner and a deterministic React mixer fixture. Firefox screenshots are visual checks, not automated bounds assertions.
+- All 18 Edge viewport checks passed: 3840×2160, 1920×1080, 1366×768, 1280×720, 1024×600 and 900×700, each with 2, 16 and 24 inputs.
+- Captured Edge and Firefox fixtures at all six resolutions; inspected reference-size, laptop and reduced-area captures against `soundflex.png`. Complete lower-row visibility intentionally replaces the reference image's taskbar clipping.
+- TypeScript checking passed; all 22 backend tests and 20 UI/layout-budget tests passed; Vite production build passed.
+- `git diff --check` passed. Temporary logs, stdin file and captures were removed; the ignored production build is retained for user testing.
+- No live MixBoard validation was performed yet. The user offered to run it; host/IP and ports remain pending. Chrome is still unavailable.
+
+### Fader alignment review correction
+
+- Inspected Java `AudioVolumeEditorPanel`: major ticks every 10 dB and minor ticks every 2 dB.
+- Replaced full-height flex-distributed labels with dB-positioned tick centers over the actual thumb-center travel. Both browser thumb styles now use explicit border-box dimensions.
+- Added the missing 2 dB minor ticks, a component tick-position test and real-browser geometric alignment assertions for every fader/tick at all 18 fixture combinations.
+- TypeScript checking, 21 frontend tests, 18 Edge layout/alignment checks and production build passed. Re-captured Edge/Firefox fixtures and inspected laptop tick alignment; clipboard image itself remains unavailable.
+
+### Channel selection review correction
+
+- Channel buttons now send `selectChannel` only when the click event has Ctrl pressed. Normal, Shift-only, Alt-only and Meta-only clicks leave selection unchanged.
+- Added a Ctrl-click tooltip, interaction regression coverage and application-specific documentation.
+- TypeScript checking, all 22 frontend tests and the production build passed.
+
+### Task 8 validation
+
+- Added local URL channel state (CH_0 default, invalid values rejected), Ctrl-click navigation and URL persistence without shared localStorage or global MBControl selection commands.
+- Separated local strip/action/meter channel from global `CURRENT_CHANNEL`; the preview knob tooltip and accessibility description identify the global listening channel.
+- Removed the global web `selectChannel` action. Preview, track gains, solo/assignments and backend connection remain shared as documented.
+- Meter subscriptions carry validated activity/channel fields. One backend cycle queries shared input RMS once and output RMS once per distinct visible channel, with per-channel caches, fan-out and unchanged-sample suppression.
+- Added URL, API subscription and two-App tests for independent channels, native state changes, scoped controls, wrong-channel meter suppression and clearing on navigation.
+- Added backend tests for multi-channel demand, duplicate viewers, all-four-channel five-query bounds, slow-cycle backpressure, subscription changes, cache delivery, invalid subscriptions and independent suspension/disconnection. Existing reconnect and native GUI synchronization regressions still pass.
+- TypeScript checking passed; all 33 frontend tests and 24 backend tests passed; all 18 Edge layout/alignment checks passed; production build passed.
+- With a temporary mock shared bridge, validated two concurrent production Edge pages: CH_0 and CH_2 restore from their URLs, and Ctrl-click on the first page changes only that page to CH_1. Captured and reviewed the production CH_0/CH_2 Edge layouts.
+- Firefox launched the production pages but CLI screenshot capture preceded the WebSocket snapshot; this does not establish Firefox concurrent-channel validation. Prior Firefox mixer fixture/layout validation remains applicable; live/multi-window Firefox checks remain manual deployment validation.
+- No live MixBoard instance was contacted because endpoint details were not supplied. No MixBoard Java source, dependencies or launchers were changed.
+- Temporary browser review helper, profiles, logs, stdin file and captures were removed; ignored production build remains available for user testing.
+
+## Files changed by Task 8
+
+- `src/App.tsx`, `src/App.test.tsx`
+- `src/channel.ts`, `src/channel.test.ts`
+- `src/api.ts`, `src/api.test.ts`, `src/types.ts`
+- `src/components/Mixer.tsx`, `src/components/Mixer.test.tsx`
+- `src/components/PreviewKnob.tsx`
+- `src/test/viewport.tsx`
+- `server/actions.js`, `server/snapshot.js`, `server/mixboard-bridge.js`, `server/web-server.js`
+- `server/test/actions.test.js`, `server/test/mixboard-bridge.test.js`, `server/test/web-server.test.js`
+- `README.md`, `../STYLEGUIDE.md`
+- `agent/soundflex_web_controller/PLAN.md`, `agent/soundflex_web_controller/STATUS.md`
+
+Prior uncommitted Task 7 changes are retained.
+
+## Files changed by Task 7
+
+- `src/styles.css`
+- `src/components/Fader.tsx`
+- `src/components/Fader.test.tsx`
+- `src/components/Mixer.tsx`
+- `src/components/Mixer.test.tsx`
+- `src/layout.test.ts`
+- `src/test/viewport.html`
+- `src/test/viewport.tsx`
+- `src/test/viewport-browser.mjs`
+- `package.json`
+- `README.md`
+- `../STYLEGUIDE.md`
+- `agent/soundflex_web_controller/ext_docs/VIEWPORT_REFERENCE.md`
 - `agent/soundflex_web_controller/STATUS.md`
 
-No application or MixBoard source was changed while planning Task 7.
+No MixBoard source was changed.

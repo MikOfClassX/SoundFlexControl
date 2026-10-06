@@ -164,7 +164,7 @@ test("MixBoardBridge bounds meter polling while replies are slow", async (contex
   await delay(40);
   assert.equal(inputMeterQueries, 0, "meters were queried without an active viewer");
 
-  bridge.setMeterActive(true);
+  bridge.setMeterChannels(["CH_1"]);
   await waitUntil(() => meters.length >= 2, 1000);
 
   assert.equal(meters[0].channel, "CH_1");
@@ -179,10 +179,57 @@ test("MixBoardBridge bounds meter polling while replies are slow", async (contex
   for (const socket of commandSockets) socket.destroy();
   await waitUntil(() => inputMeterQueries > beforeReconnect, 1500);
 
-  bridge.setMeterActive(false);
+  bridge.setMeterChannels([]);
   const stoppedAt = inputMeterQueries;
   await delay(100);
   assert.equal(inputMeterQueries, stoppedAt, "meter polling continued after the last viewer suspended");
+});
+
+test("distinct channel demand shares input RMS, bounds cycles and suppresses obsolete delivery", async (context) => {
+  const mock = await audioMock(context, { meterIntervalMs: 80 });
+  const samples = [];
+  mock.bridge.on("meters", sample => samples.push(sample));
+  await mock.connect();
+  assert.throws(() => mock.bridge.setMeterChannels(["CH_9"]), /Invalid channel/u);
+  mock.bridge.setMeterChannels(["CH_0", "CH_2", "CH_2"]);
+  await waitUntil(() => samples.length === 2, 1000);
+  const queries = () => mock.commands.filter(command => command.includes("RMS"));
+  assert.deepEqual(queries(), ["MBC_GETVIDEOINPUTRMS", "MBC_GETAUDIOTRACKRMS CHANNEL=CH_0", "MBC_GETAUDIOTRACKRMS CHANNEL=CH_2"]);
+  assert.equal(mock.bridge.getCachedMeters("CH_0").outputTracks[0], .1);
+  assert.equal(mock.bridge.getCachedMeters("CH_2").outputTracks[0], .3);
+  assert.equal(mock.bridge.getCachedMeters("CH_1"), null);
+  assert.strictEqual(samples[0].videoInputs, samples[1].videoInputs);
+  assert.ok(!mock.commands.some(command => command.startsWith("MBC_SELECT") || command.startsWith("MBC_SETAUDIOPREVIEWCHANNEL")));
+
+  mock.holdNextInput = true;
+  await waitUntil(() => Boolean(mock.releaseInput), 1000);
+  const heldCount = queries().length;
+  await delay(180);
+  assert.equal(queries().length, heldCount, "a held reply queued another cycle");
+  mock.bridge.setMeterChannels(["CH_1"]);
+  assert.equal(mock.bridge.getCachedMeters("CH_0"), null);
+  mock.releaseInput();
+  await waitUntil(() => samples.some(sample => sample.channel === "CH_1"), 1000);
+  assert.deepEqual(samples.map(sample => sample.channel), ["CH_0", "CH_2", "CH_1"]);
+  assert.ok(samples[2].sequence > samples[1].sequence);
+  const delivered = samples.length;
+  await delay(200);
+  assert.equal(samples.length, delivered, "unchanged per-channel values were broadcast");
+  const allChannelStart = queries().length;
+  mock.bridge.setMeterChannels(["CH_0", "CH_1", "CH_2", "CH_3"]);
+  await waitUntil(() => Boolean(mock.bridge.getCachedMeters("CH_3")), 1000);
+  assert.deepEqual(queries().slice(allChannelStart), [
+    "MBC_GETVIDEOINPUTRMS",
+    "MBC_GETAUDIOTRACKRMS CHANNEL=CH_0", "MBC_GETAUDIOTRACKRMS CHANNEL=CH_1",
+    "MBC_GETAUDIOTRACKRMS CHANNEL=CH_2", "MBC_GETAUDIOTRACKRMS CHANNEL=CH_3",
+  ]);
+  mock.bridge.setMeterChannels([]);
+  await delay(30);
+  const stoppedCount = queries().length;
+  await delay(160);
+  assert.equal(queries().length, stoppedCount);
+  mock.bridge.disconnect();
+  assert.equal(mock.bridge.getCachedMeters("CH_1"), null);
 });
 
 test("continuous native audio events cannot starve button reconciliation", async (context) => {
@@ -245,7 +292,6 @@ test("each successful web action requests one native refresh after its mutation 
   await mock.connect();
   assert.ok(!mock.commands.includes("MBC_UPDATESOUNDFLEXGUI"), "initial snapshot requested native refresh");
   const actions = [
-    ["selectChannel", { channel: "CH_2" }],
     ["setPreviewTrack", { track: "T2" }],
     ["setPreviewVolume", { volume: 0.4 }],
     ["setTrackVolume", { track: "T1", volume: 10 ** (10 / 20) }],
@@ -272,8 +318,9 @@ test("each successful web action requests one native refresh after its mutation 
 test("failed or invalid web mutations do not request a native refresh", async (context) => {
   const mock = await audioMock(context);
   await mock.connect();
-  mock.replies["MBC_SETAUDIOPREVIEWCHANNEL CHANNEL=CH_2"] = "Error 1";
-  await assert.rejects(mock.bridge.executeAction("selectChannel", { channel: "CH_2" }), /MBC_SETAUDIOPREVIEWCHANNEL failed/u);
+  mock.replies["MBC_SETAUDIOPREVIEWTRACK AUDIO_TRACK=T2"] = "Error 1";
+  await assert.rejects(mock.bridge.executeAction("setPreviewTrack", { track: "T2" }), /MBC_SETAUDIOPREVIEWTRACK failed/u);
+  await assert.rejects(mock.bridge.executeAction("selectChannel", { channel: "CH_2" }), /Unsupported/u);
   await assert.rejects(mock.bridge.executeAction("setInputVolume", { channel: "CH_0", videoInputId: 0, volume: 4 }), /volume/iu);
   assert.ok(!mock.commands.includes("MBC_UPDATESOUNDFLEXGUI"));
 });
@@ -304,7 +351,7 @@ test("web disable requests another native refresh after fade confirmation, not o
   assert.equal(mock.commands.filter((command) => command === "MBC_UPDATESOUNDFLEXGUI").length, 2);
 });
 
-async function audioMock(context) {
+async function audioMock(context, bridgeOptions = {}) {
   const sockets = new Set();
   const eventSockets = new Set();
   const mock = { enabled: false, fadeOutMs: 0, fadeUntil: 0, queries: 0, holdNext: false, release: null, commands: [], replies: {} };
@@ -328,6 +375,15 @@ async function audioMock(context) {
           } else socket.write(reply);
         } else if (command.startsWith("MBC_GETMIXBOARDINFO")) {
           socket.write(`${encode({ KEYER: [] })}\n`);
+        } else if (command === "MBC_GETVIDEOINPUTRMS") {
+          const reply = `${encode([[.1, .2, 0, 0, 0, 0, 0, 0, 0, 0]])}\n`;
+          if (mock.holdNextInput) {
+            mock.holdNextInput = false;
+            mock.releaseInput = () => socket.write(reply);
+          } else socket.write(reply);
+        } else if (command.startsWith("MBC_GETAUDIOTRACKRMS")) {
+          const value = (Number(command.slice(-1)) + 1) / 10;
+          socket.write(`${encode([value, value, 0, 0, 0, 0, 0, 0])}\n`);
         } else if (command.startsWith("MBC_SETAUDIOENABLED")) {
           mock.enabled = command.includes("ENABLED=TRUE");
           mock.fadeUntil = mock.enabled ? 0 : Date.now() + mock.fadeOutMs;
@@ -341,7 +397,7 @@ async function audioMock(context) {
     socket.on("close", () => eventSockets.delete(socket));
   });
   await Promise.all([listen(commandServer), listen(eventServer)]);
-  mock.bridge = new MixBoardBridge({ meterIntervalMs: 0, reconcileIntervalMs: 0, reconcileDebounceMs: 30 });
+  mock.bridge = new MixBoardBridge({ meterIntervalMs: 0, reconcileIntervalMs: 0, reconcileDebounceMs: 30, ...bridgeOptions });
   context.after(async () => {
     mock.bridge.disconnect();
     for (const socket of [...sockets, ...eventSockets]) socket.destroy();

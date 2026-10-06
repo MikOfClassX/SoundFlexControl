@@ -21,10 +21,11 @@ interface MixerProps {
   snapshot: SoundFlexSnapshot;
   meters: SoundFlexMeters | null;
   onAction: (action: SoundFlexAction) => void;
+  selectedChannel: Channel;
+  onChannelChange: (channel: Channel) => void;
 }
 
-export default function Mixer({ snapshot, meters, onAction }: MixerProps) {
-  const selectedChannel = snapshot.soundFlex.CURRENT_CHANNEL;
+export default function Mixer({ snapshot, meters, onAction, selectedChannel, onChannelChange }: MixerProps) {
   const [meterTracks, setMeterTracks] = useState<Record<number, AudioTrack>>({});
   const videoInputs = buildVideoInputSlots(snapshot);
   const gridStyle = {
@@ -34,10 +35,10 @@ export default function Mixer({ snapshot, meters, onAction }: MixerProps) {
 
   return (
     <section className="mixer" aria-label="SoundFlex audio mixer">
-      <MixerHeader snapshot={snapshot} onAction={onAction} />
+      <MixerHeader snapshot={snapshot} onAction={onAction} selectedChannel={selectedChannel} onChannelChange={onChannelChange} />
       <div className="mixer-divider" />
       <div className="mixer-body">
-        <OutputTracks snapshot={snapshot} meters={meters} onAction={onAction} />
+        <OutputTracks snapshot={snapshot} meters={meters} onAction={onAction} selectedChannel={selectedChannel} />
         <div className="mixer-separator" aria-hidden="true" />
         <div className="input-scroll" tabIndex={0} aria-label="VideoInput mixer strips">
           <div className="input-grid" style={gridStyle}>
@@ -61,12 +62,13 @@ export default function Mixer({ snapshot, meters, onAction }: MixerProps) {
   );
 }
 
-function MixerHeader({ snapshot, onAction }: Pick<MixerProps, "snapshot" | "onAction">) {
+function MixerHeader({ snapshot, onAction, selectedChannel, onChannelChange }: Pick<MixerProps, "snapshot" | "onAction" | "selectedChannel" | "onChannelChange">) {
   const info = snapshot.soundFlex;
   return (
     <div className="mixer-header">
       <PreviewKnob
         value={info.PREVIEW_VOLUME}
+        monitorChannel={info.CURRENT_CHANNEL}
         onChange={(volume) => onAction({ name: "setPreviewVolume", payload: { volume } })}
       />
       <div className="preview-tracks" aria-label="Preview audio track">
@@ -90,13 +92,16 @@ function MixerHeader({ snapshot, onAction }: Pick<MixerProps, "snapshot" | "onAc
       <div className="header-spacer" />
       <div className="channel-rail" aria-label="Output channel">
         {CHANNELS.map((channel, index) => {
-          const selected = info.CURRENT_CHANNEL === channel;
+          const selected = selectedChannel === channel;
           return (
             <button
               aria-pressed={selected}
               className="channel-choice"
               key={channel}
-              onClick={() => onAction({ name: "selectChannel", payload: { channel } })}
+              onClick={(event) => {
+                if (event.ctrlKey) onChannelChange(channel);
+              }}
+              title="Ctrl-click to change this window's output channel"
               type="button"
             >
               <AssetIcon name={`channel_${index}`} />
@@ -109,8 +114,7 @@ function MixerHeader({ snapshot, onAction }: Pick<MixerProps, "snapshot" | "onAc
   );
 }
 
-function OutputTracks({ snapshot, meters, onAction }: MixerProps) {
-  const selectedChannel = snapshot.soundFlex.CURRENT_CHANNEL;
+function OutputTracks({ snapshot, meters, onAction, selectedChannel }: Omit<MixerProps, "onChannelChange">) {
   const freshMeters = meters?.channel === selectedChannel ? meters.outputTracks : [];
   return (
     <div className="output-grid" aria-label="Output tracks">

@@ -291,6 +291,33 @@ Work:
 
 **Exit criterion:** At 100% browser zoom, the complete mixer fits inside each agreed test viewport without page-level scrolling or clipped controls, and measured section/control proportions closely match `soundflex.png` while all controls remain usable.
 
+### Task 8 — Independent output channel per browser window
+
+**Objective:** Allow concurrent SoundFlex windows to control and meter different output channels without changing another window's selected channel or MixBoard's global preview-monitor channel.
+
+Requested behavior:
+
+- URLs `/?channel=CH_0` through `/?channel=CH_3` choose each window's initial local channel. Missing/invalid values default to `CH_0` without sending MBControl mutations.
+- Ctrl-click changes only that window's local channel and updates its URL with `history.replaceState`, preserving other URL parameters. Refresh restores that channel. Do not persist the selection in shared `localStorage`.
+- Local selection is independent of `soundFlex.CURRENT_CHANNEL` and native `SELECT_CHANNEL` / preview-channel events. These server fields remain authoritative global state, not a window selection.
+- Input enable, AFV, per-channel input gain, program/preview colors and output meters use the window's local channel. Input meters retain the existing track/solo selection and apply the local channel's input-strip gain.
+- T0–T3 output gains, input track assignments and solo, preview track/volume, backend connection settings and connect/disconnect remain shared. Preview listening remains on the global monitor channel set in MixBoard; identify it in the preview control tooltip/accessibility description. Merely opening a window or Ctrl-clicking must not change it.
+
+Work:
+
+1. Add typed local channel state in `App.tsx`, URL parsing/updating and explicit channel/selection props in `Mixer.tsx`. Stop sending the existing global `selectChannel` action from channel buttons; remove that obsolete public web action and its command construction rather than leave an unused global switch path.
+2. Include `{ active, channel }` in meter subscriptions. Track the subscribed channel per WebSocket and validate both fields. On channel change clear old displayed meters; cached/new samples must match the current local channel before acceptance.
+3. Replace single-channel meter demand/cache with a distinct active-channel set and per-channel cached samples in the shared bridge. Maintain one serialized meter cycle: query `MBC_GETVIDEOINPUTRMS` once, then `MBC_GETAUDIOTRACKRMS` once for each distinct active channel. Fan out each channel sample only to its matching viewers, never duplicate polls per window.
+4. Preserve the 150 ms post-response cadence, strict one-cycle backpressure, snapshot/action priority, hidden-page suspension, unchanged-sample suppression and reconnect rebuilding. With N distinct visible channels the cycle contains 1+N queries (maximum five); with no visible clients there are none. Stop delivering old-channel samples when a subscription changes during a cycle, and clear caches on disconnect/reconnect.
+5. Add URL/default/local-selection tests, scoped control-action assertions and two-window UI coverage demonstrating that global native state changes do not move local selection. Extend bridge/WebSocket tests for same-channel sharing, different-channel fan-out, input RMS query reuse, channel switches during slow reads, cached samples, invalid subscriptions, visibility and reconnect.
+6. Run typecheck, frontend/backend tests, production build and the viewport runner. Review concurrent windows in Edge/Firefox where available; validate against live MixBoard when endpoint details are supplied. Update README and shared style guide with per-window URLs, shared-state boundaries and preview-listening semantics.
+
+Expected files: `src/App.tsx`, `src/api.ts`, `src/types.ts`, `src/components/Mixer.tsx`, focused frontend helpers/tests, `server/web-server.js`, `server/mixboard-bridge.js`, `server/snapshot.js`, `server/actions.js`, affected backend tests, `src/test/viewport.tsx`, `README.md`, `../STYLEGUIDE.md`, this plan and status. No new dependencies, extra backend instances, launcher changes or MixBoard Java changes are required.
+
+**Exit criterion:** Two or more windows retain independent selected channels through Ctrl-click, state events and reload; scoped controls send their own channel; output meters arrive only for each subscribed channel; global preview selection is untouched by local navigation; shared input RMS polling and per-distinct-channel output polling remain bounded with automated multi-window/backpressure coverage; tests, layout checks and build pass.
+
+**Approved architectural change:** Earlier tasks coupled web selection to the native/global monitor channel and one output-meter stream. Task 8 deliberately separates local navigation from global monitor state and adds channel-scoped shared meter subscriptions. The user explicitly approved this updated plan before implementation.
+
 ## Validation strategy
 
 ### Java/protocol

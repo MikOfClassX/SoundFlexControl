@@ -8,7 +8,6 @@ import {
 } from "./validation.js";
 
 export const ACTION_NAMES = Object.freeze([
-  "selectChannel",
   "setPreviewTrack",
   "setPreviewVolume",
   "setTrackVolume",
@@ -23,13 +22,6 @@ export function buildActionCommands(name, payload, maxInputs) {
   const value = payload && typeof payload === "object" ? payload : {};
 
   switch (name) {
-    case "selectChannel": {
-      const channel = validateChannel(value.channel);
-      return [
-        `MBC_SELECTCHANNEL CHANNEL=${channel}`,
-        `MBC_SETAUDIOPREVIEWCHANNEL CHANNEL=${channel}`,
-      ];
-    }
     case "setPreviewTrack":
       return [`MBC_SETAUDIOPREVIEWTRACK AUDIO_TRACK=${validateTrack(value.track)}`];
     case "setPreviewVolume":

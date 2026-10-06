@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import express from "express";
 import { WebSocket, WebSocketServer } from "ws";
 import { ACTION_NAMES } from "./actions.js";
+import { validateChannel } from "./validation.js";
 import { MixBoardBridge } from "./mixboard-bridge.js";
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -13,7 +14,7 @@ export function createWebServer({ bridge = new MixBoardBridge() } = {}) {
   const app = express();
   const server = createServer(app);
   const webSockets = new WebSocketServer({ server, path: "/ws" });
-  const activeMeterSockets = new Set();
+  const activeMeterSockets = new Map();
   const distPath = path.join(projectRoot, "dist");
 
   app.get("/api/health", (_request, response) => {
@@ -37,20 +38,21 @@ export function createWebServer({ bridge = new MixBoardBridge() } = {}) {
   bridge.on("state", (payload) => broadcast({ type: "state", payload }));
   bridge.on("meters", (payload) => {
     const serialized = JSON.stringify({ type: "meters", payload });
-    for (const socket of activeMeterSockets) {
-      if (socket.readyState === WebSocket.OPEN) socket.send(serialized);
+    for (const [socket, channel] of activeMeterSockets) {
+      if (channel === payload.channel && socket.readyState === WebSocket.OPEN) socket.send(serialized);
     }
   });
   bridge.on("event", (payload) => broadcast({ type: "event", payload }));
   bridge.on("bridgeError", (error) => broadcastError(broadcast, error));
 
-  const setMeterSubscription = (socket, active) => {
+  const setMeterSubscription = (socket, active, channel) => {
     if (typeof active !== "boolean") throw new TypeError("Meter subscription activity must be a Boolean");
-    const wasActive = activeMeterSockets.has(socket);
-    if (active) activeMeterSockets.add(socket);
+    const previousChannel = activeMeterSockets.get(socket);
+    if (active) activeMeterSockets.set(socket, validateChannel(channel));
     else activeMeterSockets.delete(socket);
-    bridge.setMeterActive(activeMeterSockets.size > 0);
-    if (active && !wasActive && bridge.latestMeters) send(socket, { type: "meters", payload: bridge.latestMeters });
+    bridge.setMeterChannels([...new Set(activeMeterSockets.values())]);
+    const cached = active && previousChannel !== channel ? bridge.getCachedMeters(channel) : null;
+    if (cached) send(socket, { type: "meters", payload: cached });
   };
 
   webSockets.on("connection", (socket) => {
@@ -83,7 +85,7 @@ export function createWebServer({ bridge = new MixBoardBridge() } = {}) {
     webSockets,
     async close() {
       activeMeterSockets.clear();
-      bridge.setMeterActive(false);
+      bridge.setMeterChannels([]);
       bridge.disconnect();
       for (const client of webSockets.clients) client.close();
       await new Promise((resolve) => webSockets.close(resolve));
@@ -113,7 +115,7 @@ async function handleMessage(message, bridge, socket, setMeterSubscription) {
       break;
     }
     case "meters.subscription":
-      setMeterSubscription(socket, message.payload?.active);
+      setMeterSubscription(socket, message.payload?.active, validateChannel(message.payload?.channel));
       if (message.requestId) send(socket, { type: "request.result", requestId: message.requestId, payload: null });
       break;
     case "action": {

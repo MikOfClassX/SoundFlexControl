@@ -4,7 +4,6 @@ import { ACTION_NAMES, buildActionCommands } from "../actions.js";
 
 test("all exposed SoundFlex actions produce constrained MBControl commands", () => {
   const cases = {
-    selectChannel: [{ channel: "CH_2" }, ["MBC_SELECTCHANNEL CHANNEL=CH_2", "MBC_SETAUDIOPREVIEWCHANNEL CHANNEL=CH_2"]],
     setPreviewTrack: [{ track: "T3" }, ["MBC_SETAUDIOPREVIEWTRACK AUDIO_TRACK=T3"]],
     setPreviewVolume: [{ volume: 0.5 }, ["MBC_SETAUDIOPREVIEWVOLUME VOLUME=0.5"]],
     setTrackVolume: [{ track: "T1", volume: 0.25 }, ["MBC_SETAUDIOTRACKVOLUME AUDIO_TRACK=T1 VOLUME=0.25"]],
@@ -33,7 +32,8 @@ test("input/output faders accept native +10 dB gain while preview remains limite
 });
 
 test("action validation blocks command injection and invalid ranges", () => {
-  assert.throws(() => buildActionCommands("selectChannel", { channel: "CH_0\nQUIT" }, 24), /Invalid channel/u);
+  assert.throws(() => buildActionCommands("setAudioEnabled", { channel: "CH_0\nQUIT", videoInputId: 0, enabled: true }, 24), /Invalid channel/u);
+  assert.throws(() => buildActionCommands("selectChannel", { channel: "CH_0" }, 24), /Unsupported/u);
   assert.throws(() => buildActionCommands("setPreviewVolume", { volume: 1.1 }, 24), /0 to 1/u);
   assert.throws(() => buildActionCommands("setSoloPreview", { videoInputId: 24, enabled: true }, 24), /VideoInput/u);
   assert.throws(() => buildActionCommands("unknown", {}, 24), /Unsupported/u);

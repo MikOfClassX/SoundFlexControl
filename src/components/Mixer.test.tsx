@@ -4,7 +4,11 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { SoundFlexSnapshot, VideoInputAudioInfo } from "../types";
-import Mixer from "./Mixer";
+import MixerComponent from "./Mixer";
+
+function Mixer(props: Omit<Parameters<typeof MixerComponent>[0], "selectedChannel" | "onChannelChange"> & Partial<Pick<Parameters<typeof MixerComponent>[0], "selectedChannel" | "onChannelChange">>) {
+  return <MixerComponent selectedChannel="CH_1" onChannelChange={() => undefined} {...props} />;
+}
 
 afterEach(cleanup);
 
@@ -25,7 +29,8 @@ describe("SoundFlex mixer", () => {
   it("maps visible controls to their exact scoped actions", async () => {
     const user = userEvent.setup();
     const onAction = vi.fn();
-    render(<Mixer meters={null} onAction={onAction} snapshot={createSnapshot()} />);
+    const onChannelChange = vi.fn();
+    render(<Mixer meters={null} onAction={onAction} onChannelChange={onChannelChange} snapshot={createSnapshot()} />);
 
     fireEvent.change(screen.getByRole("slider", { name: "Preview monitor volume" }), { target: { value: "0.3" } });
     expect(onAction).toHaveBeenLastCalledWith({ name: "setPreviewVolume", payload: { volume: 0.3 } });
@@ -33,8 +38,10 @@ describe("SoundFlex mixer", () => {
     await user.click(screen.getByRole("button", { name: "Preview T2" }));
     expect(onAction).toHaveBeenLastCalledWith({ name: "setPreviewTrack", payload: { track: "T2" } });
 
+    await user.keyboard("{Control>}");
     await user.click(screen.getByRole("button", { name: "CH_2" }));
-    expect(onAction).toHaveBeenLastCalledWith({ name: "selectChannel", payload: { channel: "CH_2" } });
+    await user.keyboard("{/Control}");
+    expect(onChannelChange).toHaveBeenLastCalledWith("CH_2");
 
     await user.click(screen.getByRole("button", { name: /Camera 1: CAMERA/u }));
     expect(onAction).toHaveBeenLastCalledWith({
@@ -65,6 +72,26 @@ describe("SoundFlex mixer", () => {
 
     fireEvent.change(screen.getByRole("slider", { name: "T1 output volume" }), { target: { value: "-6" } });
     expect(onAction.mock.calls.at(-1)?.[0]).toMatchObject({ name: "setTrackVolume", payload: { track: "T1" } });
+  });
+
+  it("changes only the local output channel on Ctrl-click", () => {
+    const onAction = vi.fn();
+    const onChannelChange = vi.fn();
+    render(<Mixer meters={null} onAction={onAction} onChannelChange={onChannelChange} snapshot={createSnapshot()} />);
+    const button = screen.getByRole("button", { name: "CH_2" });
+
+    fireEvent.click(button);
+    fireEvent.click(button, { shiftKey: true });
+    fireEvent.click(button, { altKey: true });
+    fireEvent.click(button, { metaKey: true });
+    expect(onAction).not.toHaveBeenCalled();
+    expect(button.getAttribute("aria-pressed")).toBe("false");
+    expect(onChannelChange).not.toHaveBeenCalled();
+    expect(button.getAttribute("title")).toBe("Ctrl-click to change this window's output channel");
+
+    fireEvent.click(button, { ctrlKey: true });
+    expect(onChannelChange).toHaveBeenCalledExactlyOnceWith("CH_2");
+    expect(onAction).not.toHaveBeenCalled();
   });
 
   it("keeps preview selection and the solo indicator driven by existing state", () => {
